@@ -1,0 +1,2040 @@
+{
+  "category_name_aliases_v815": {
+    "tv": "tivi",
+    "television": "tivi",
+    "air conditioner": "may lanh",
+    "may dieu hoa": "may lanh",
+    "dieu hoa": "may lanh",
+    "air purifier": "may loc khong khi",
+    "quat dien": "quat",
+    "fan": "quat",
+    "massage chair": "ghe massage",
+    "karaoke speaker": "loa",
+    "loa karaoke": "loa"
+  },
+  "category_to_placement_v815": {
+    "tivi": "TV",
+    "may lanh": "Máy điều hòa",
+    "may loc khong khi": "Máy lọc không khí",
+    "ghe massage": "Ghế massage",
+    "loa": "Loa",
+    "quat": "Quạt điện",
+    "quat tran": "Quạt trần",
+    "quat dieu hoa": "Quạt điều hòa",
+    "quat mini": "Quạt điện",
+    "robot hut bui": "Robot hút bụi",
+    "may hut bui": "Máy hút bụi",
+    "may hut bui & thiet bi lam sach san": "Máy hút bụi",
+    "tham trai san": "Thảm trải sàn",
+    "tivi box & dau thu ky thuat so": "Tivi box & Đầu thu kỹ thuật số",
+    "may chieu & man hinh chieu": "Máy chiếu",
+    "may chieu": "Máy chiếu",
+    "may choi game": "Máy chơi game",
+    "bon ngam chan": "Bồn ngâm chân"
+  },
+  "remove_bg_type_by_placement_v815": {
+    "TV": "tv",
+    "Máy điều hòa": "air_conditioner",
+    "Máy lọc không khí": "air_purifier",
+    "Ghế massage": "massage_chair",
+    "Loa": "speaker",
+    "Loa karaoke": "karaoke_speaker",
+    "Quạt điện": "fan",
+    "Quạt trần": "ceiling_fan",
+    "Quạt điều hòa": "air_cooler",
+    "Robot hút bụi": "robot_vacuum",
+    "Máy hút bụi": "vacuum_cleaner",
+    "Thảm trải sàn": "rug",
+    "Tivi box & Đầu thu kỹ thuật số": "tv_box",
+    "Máy chiếu": "projector",
+    "Máy chơi game": "game_console",
+    "Bồn ngâm chân": "foot_bath"
+  },
+  "remove_bg_product_type_by_category_id": {
+    "2662": "massage_chair",
+    "1844": "pillow",
+    "941": "rug",
+    "59": "fan",
+    "980": "tv_box"
+  },
+  "remove_bg_product_type_by_group": {
+    "TV": "tv",
+    "Máy điều hòa": "air_conditioner",
+    "Ghế massage": "massage_chair",
+    "Quạt trần": "ceiling_fan",
+    "Quạt điện": "fan",
+    "Loa": "speaker",
+    "Loa karaoke": "karaoke_speaker",
+    "Máy lọc không khí": "air_purifier",
+    "Robot hút bụi": "robot_vacuum",
+    "Quạt điều hòa": "air_cooler",
+    "Thảm trải sàn": "rug"
+  },
+  "category_rules": {
+    "TV": {
+      "surface_options": [
+        "wall"
+      ],
+      "relative_width": 1.5,
+      "relative_height": 0.78,
+      "preferred_x": "center",
+      "preferred_y": "middle",
+      "anchor_labels": [
+        "Sofa"
+      ],
+      "size_cm": {
+        "width": 115,
+        "height": 68,
+        "depth": 9
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "wall_mount",
+      "spatial_rule": "face_seating",
+      "min_visible_fraction": 0.95
+    },
+    "Loa karaoke": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.85,
+      "relative_height": 1.28,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [
+        "TV"
+      ],
+      "size_cm": {
+        "width": 36,
+        "height": 73,
+        "depth": 38
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "near_tv",
+      "min_visible_fraction": 0.95
+    },
+    "Loa": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.55,
+      "relative_height": 0.77,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [
+        "TV"
+      ],
+      "size_cm": {
+        "width": 22,
+        "height": 36,
+        "depth": 23
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "near_tv",
+      "min_visible_fraction": 0.95
+    },
+    "Quạt trần": {
+      "surface_options": [
+        "ceiling"
+      ],
+      "relative_width": 1.35,
+      "relative_height": 0.35,
+      "preferred_x": "center",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 120,
+        "height": 22,
+        "depth": 120
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "ceiling_hanging",
+      "spatial_rule": "ceiling_clear_of_fixtures",
+      "min_visible_fraction": 0.95
+    },
+    "Máy điều hòa": {
+      "surface_options": [
+        "wall"
+      ],
+      "relative_width": 1.35,
+      "relative_height": 0.62,
+      "preferred_x": "edge",
+      "preferred_y": "top",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 95,
+        "height": 31,
+        "depth": 23
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "wall_mount",
+      "spatial_rule": "upper_wall_clear",
+      "min_visible_fraction": 0.95
+    },
+    "Máy lọc không khí": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.76,
+      "relative_height": 1.13,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [
+        "Sofa"
+      ],
+      "size_cm": {
+        "width": 30,
+        "height": 65,
+        "depth": 30
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "edge_with_clearance",
+      "min_visible_fraction": 0.95
+    },
+    "Máy hút bụi": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.57,
+      "relative_height": 1.1,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 27,
+        "height": 110,
+        "depth": 25
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Robot hút bụi": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.56,
+      "relative_height": 0.23,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 35,
+        "height": 10,
+        "depth": 35
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_low",
+      "spatial_rule": "floor_edge_docking",
+      "min_visible_fraction": 0.95
+    },
+    "Bóng đèn LED": {
+      "surface_options": [
+        "ceiling"
+      ],
+      "relative_width": 0.22,
+      "relative_height": 0.22,
+      "preferred_x": "center",
+      "preferred_y": "top",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 12,
+        "height": 12,
+        "depth": 12
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "ceiling_hanging",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Ghế massage": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 1.48,
+      "relative_height": 1.56,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [
+        "Chair",
+        "Sofa"
+      ],
+      "size_cm": {
+        "width": 85,
+        "height": 115,
+        "depth": 125
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Microphone": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.22,
+      "relative_height": 0.44,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 6,
+        "height": 23,
+        "depth": 6
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy chiếu": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.95,
+      "relative_height": 0.52,
+      "preferred_x": "center",
+      "preferred_y": "top",
+      "anchor_labels": [
+        "TV"
+      ],
+      "size_cm": {
+        "width": 32,
+        "height": 13,
+        "depth": 28
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy chơi game": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.55,
+      "relative_height": 0.45,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [
+        "TV"
+      ],
+      "size_cm": {
+        "width": 31,
+        "height": 12,
+        "depth": 25
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Camera trong nhà": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.3,
+      "relative_height": 0.3,
+      "preferred_x": "edge",
+      "preferred_y": "top",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 11,
+        "height": 15,
+        "depth": 11
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Quạt điều hòa": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.76,
+      "relative_height": 1.3,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 39,
+        "height": 92,
+        "depth": 36
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "near_seating_avoid_walkway",
+      "min_visible_fraction": 0.95
+    },
+    "Quạt điện": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.62,
+      "relative_height": 1.32,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [
+        "Sofa",
+        "Chair"
+      ],
+      "size_cm": {
+        "width": 45,
+        "height": 115,
+        "depth": 45
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "near_seating_avoid_walkway",
+      "min_visible_fraction": 0.95
+    },
+    "Máy hút ẩm": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.73,
+      "relative_height": 0.95,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 32,
+        "height": 56,
+        "depth": 25
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Bộ lau nhà": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.43,
+      "relative_height": 1.1,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 30,
+        "height": 125,
+        "depth": 30
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Đèn điện/đèn sạc": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.47,
+      "relative_height": 0.75,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 22,
+        "height": 42,
+        "depth": 22
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "table_support",
+      "min_visible_fraction": 0.95
+    },
+    "Ổ cắm điện": {
+      "surface_options": [
+        "wall"
+      ],
+      "relative_width": 0.27,
+      "relative_height": 0.24,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 12,
+        "height": 10,
+        "depth": 5
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "wall_mount",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Thùng rác": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.52,
+      "relative_height": 0.63,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 30,
+        "height": 42,
+        "depth": 30
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Khay/kệ đựng đồ": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.79,
+      "relative_height": 0.5,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 38,
+        "height": 22,
+        "depth": 28
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "table_support",
+      "min_visible_fraction": 0.95
+    },
+    "Màn hình máy tính": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 1.0,
+      "relative_height": 0.72,
+      "preferred_x": "center",
+      "preferred_y": "middle",
+      "anchor_labels": [
+        "Table",
+        "Desk"
+      ],
+      "size_cm": {
+        "width": 62,
+        "height": 45,
+        "depth": 17
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Laptop": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.92,
+      "relative_height": 0.35,
+      "preferred_x": "center",
+      "preferred_y": "middle",
+      "anchor_labels": [
+        "Table",
+        "Desk"
+      ],
+      "size_cm": {
+        "width": 35,
+        "height": 23,
+        "depth": 25
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Quạt sưởi": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.65,
+      "relative_height": 1.0,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 30,
+        "height": 65,
+        "depth": 27
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy pha cà phê": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.65,
+      "relative_height": 0.76,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 25,
+        "height": 38,
+        "depth": 35
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Cây nước nóng lạnh": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.84,
+      "relative_height": 1.58,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 36,
+        "height": 105,
+        "depth": 38
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Hộp đựng đồ": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.59,
+      "relative_height": 0.43,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 35,
+        "height": 24,
+        "depth": 30
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Thiết bị massage": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.51,
+      "relative_height": 0.47,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 25,
+        "height": 24,
+        "depth": 22
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy tính để bàn": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.7,
+      "relative_height": 1.01,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [
+        "Table",
+        "Desk"
+      ],
+      "size_cm": {
+        "width": 22,
+        "height": 47,
+        "depth": 45
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Camera ngoài trời": {
+      "surface_options": [
+        "wall"
+      ],
+      "relative_width": 0.36,
+      "relative_height": 0.28,
+      "preferred_x": "edge",
+      "preferred_y": "top",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 18,
+        "height": 14,
+        "depth": 18
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "wall_mount",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Tủ lạnh": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 1.08,
+      "relative_height": 1.94,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 70,
+        "height": 170,
+        "depth": 70
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Tủ mát": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 1.08,
+      "relative_height": 1.94,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 70,
+        "height": 175,
+        "depth": 70
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Ấm đun nước": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.48,
+      "relative_height": 0.6,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 23,
+        "height": 25,
+        "depth": 18
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy lọc nước": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.72,
+      "relative_height": 1.16,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 38,
+        "height": 85,
+        "depth": 35
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Đèn năng lượng mặt trời": {
+      "surface_options": [
+        "wall"
+      ],
+      "relative_width": 0.36,
+      "relative_height": 0.42,
+      "preferred_x": "edge",
+      "preferred_y": "top",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 25,
+        "height": 34,
+        "depth": 15
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "wall_mount",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Bồn ngâm chân": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.7,
+      "relative_height": 0.43,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 40,
+        "height": 24,
+        "depth": 35
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_low",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Tủ đông": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 1.18,
+      "relative_height": 0.96,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 100,
+        "height": 88,
+        "depth": 60
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy giặt": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 1.16,
+      "relative_height": 1.27,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 60,
+        "height": 85,
+        "depth": 64
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy sấy quần áo": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 1.16,
+      "relative_height": 1.3,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 60,
+        "height": 85,
+        "depth": 64
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Cân sức khỏe": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 0.47,
+      "relative_height": 0.17,
+      "preferred_x": "center",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 32,
+        "height": 5,
+        "depth": 32
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_low",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy nước nóng": {
+      "surface_options": [
+        "wall"
+      ],
+      "relative_width": 0.71,
+      "relative_height": 1.05,
+      "preferred_x": "edge",
+      "preferred_y": "top",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 42,
+        "height": 65,
+        "depth": 27
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "wall_mount",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy rửa chén": {
+      "surface_options": [
+        "floor"
+      ],
+      "relative_width": 1.09,
+      "relative_height": 1.23,
+      "preferred_x": "edge",
+      "preferred_y": "bottom",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 60,
+        "height": 85,
+        "depth": 60
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "floor_standing",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Nồi cơm điện": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.57,
+      "relative_height": 0.65,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 28,
+        "height": 27,
+        "depth": 32
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Bếp từ": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.92,
+      "relative_height": 0.3,
+      "preferred_x": "center",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 55,
+        "height": 9,
+        "depth": 37
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Bếp hồng ngoại": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.92,
+      "relative_height": 0.3,
+      "preferred_x": "center",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 55,
+        "height": 9,
+        "depth": 37
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Bếp gas": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.99,
+      "relative_height": 0.4,
+      "preferred_x": "center",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 67,
+        "height": 17,
+        "depth": 42
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy hút mùi": {
+      "surface_options": [
+        "wall"
+      ],
+      "relative_width": 1.23,
+      "relative_height": 0.57,
+      "preferred_x": "center",
+      "preferred_y": "top",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 70,
+        "height": 35,
+        "depth": 45
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "wall_mount",
+      "spatial_rule": "above_cooking",
+      "min_visible_fraction": 0.95
+    },
+    "Lò vi sóng": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.83,
+      "relative_height": 0.58,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 48,
+        "height": 29,
+        "depth": 39
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Lò nướng": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.95,
+      "relative_height": 0.64,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 55,
+        "height": 35,
+        "depth": 42
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Nồi chiên không dầu": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.6,
+      "relative_height": 0.73,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 30,
+        "height": 34,
+        "depth": 36
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy xay sinh tố": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.39,
+      "relative_height": 0.73,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 20,
+        "height": 42,
+        "depth": 20
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy ép trái cây": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.42,
+      "relative_height": 0.81,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 23,
+        "height": 43,
+        "depth": 27
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy làm sữa hạt": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.4,
+      "relative_height": 0.81,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 22,
+        "height": 43,
+        "depth": 22
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Bàn ủi": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.64,
+      "relative_height": 0.24,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 30,
+        "height": 15,
+        "depth": 13
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy sấy tóc": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.42,
+      "relative_height": 0.3,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 26,
+        "height": 22,
+        "depth": 10
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy cạo râu": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.2,
+      "relative_height": 0.31,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 7,
+        "height": 17,
+        "depth": 6
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy tỉa lông": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.18,
+      "relative_height": 0.31,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 6,
+        "height": 18,
+        "depth": 5
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy tạo kiểu tóc": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.43,
+      "relative_height": 0.25,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 32,
+        "height": 8,
+        "depth": 7
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy rửa mặt": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.25,
+      "relative_height": 0.37,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 8,
+        "height": 16,
+        "depth": 8
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Bàn chải đánh răng điện": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.19,
+      "relative_height": 0.39,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 4,
+        "height": 25,
+        "depth": 4
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    },
+    "Máy tăm nước": {
+      "surface_options": [
+        "table"
+      ],
+      "relative_width": 0.28,
+      "relative_height": 0.48,
+      "preferred_x": "edge",
+      "preferred_y": "middle",
+      "anchor_labels": [],
+      "size_cm": {
+        "width": 15,
+        "height": 24,
+        "depth": 13
+      },
+      "size_source": "category_prior_estimate",
+      "mount_type": "table_top",
+      "spatial_rule": "clear_surface",
+      "min_visible_fraction": 0.95
+    }
+  },
+  "category_size_priors_cm": {
+    "TV": [
+      115,
+      68,
+      9
+    ],
+    "Loa karaoke": [
+      36,
+      73,
+      38
+    ],
+    "Loa": [
+      22,
+      36,
+      23
+    ],
+    "Quạt trần": [
+      120,
+      22,
+      120
+    ],
+    "Máy điều hòa": [
+      95,
+      31,
+      23
+    ],
+    "Máy lọc không khí": [
+      30,
+      65,
+      30
+    ],
+    "Máy hút bụi": [
+      27,
+      110,
+      25
+    ],
+    "Robot hút bụi": [
+      35,
+      10,
+      35
+    ],
+    "Bóng đèn LED": [
+      12,
+      12,
+      12
+    ],
+    "Ghế massage": [
+      85,
+      115,
+      125
+    ],
+    "Microphone": [
+      6,
+      23,
+      6
+    ],
+    "Máy chiếu": [
+      32,
+      13,
+      28
+    ],
+    "Máy chơi game": [
+      31,
+      12,
+      25
+    ],
+    "Camera trong nhà": [
+      11,
+      15,
+      11
+    ],
+    "Quạt điều hòa": [
+      39,
+      92,
+      36
+    ],
+    "Quạt điện": [
+      45,
+      115,
+      45
+    ],
+    "Máy hút ẩm": [
+      32,
+      56,
+      25
+    ],
+    "Bộ lau nhà": [
+      30,
+      125,
+      30
+    ],
+    "Đèn điện/đèn sạc": [
+      22,
+      42,
+      22
+    ],
+    "Ổ cắm điện": [
+      12,
+      10,
+      5
+    ],
+    "Thùng rác": [
+      30,
+      42,
+      30
+    ],
+    "Khay/kệ đựng đồ": [
+      38,
+      22,
+      28
+    ],
+    "Màn hình máy tính": [
+      62,
+      45,
+      17
+    ],
+    "Laptop": [
+      35,
+      23,
+      25
+    ],
+    "Quạt sưởi": [
+      30,
+      65,
+      27
+    ],
+    "Máy pha cà phê": [
+      25,
+      38,
+      35
+    ],
+    "Cây nước nóng lạnh": [
+      36,
+      105,
+      38
+    ],
+    "Hộp đựng đồ": [
+      35,
+      24,
+      30
+    ],
+    "Thiết bị massage": [
+      25,
+      24,
+      22
+    ],
+    "Máy tính để bàn": [
+      22,
+      47,
+      45
+    ],
+    "Camera ngoài trời": [
+      18,
+      14,
+      18
+    ],
+    "Tủ lạnh": [
+      70,
+      170,
+      70
+    ],
+    "Tủ mát": [
+      70,
+      175,
+      70
+    ],
+    "Ấm đun nước": [
+      23,
+      25,
+      18
+    ],
+    "Máy lọc nước": [
+      38,
+      85,
+      35
+    ],
+    "Đèn năng lượng mặt trời": [
+      25,
+      34,
+      15
+    ],
+    "Bồn ngâm chân": [
+      40,
+      24,
+      35
+    ],
+    "Tủ đông": [
+      100,
+      88,
+      60
+    ],
+    "Máy giặt": [
+      60,
+      85,
+      64
+    ],
+    "Máy sấy quần áo": [
+      60,
+      85,
+      64
+    ],
+    "Cân sức khỏe": [
+      32,
+      5,
+      32
+    ],
+    "Máy nước nóng": [
+      42,
+      65,
+      27
+    ],
+    "Máy rửa chén": [
+      60,
+      85,
+      60
+    ],
+    "Nồi cơm điện": [
+      28,
+      27,
+      32
+    ],
+    "Bếp từ": [
+      55,
+      9,
+      37
+    ],
+    "Bếp hồng ngoại": [
+      55,
+      9,
+      37
+    ],
+    "Bếp gas": [
+      67,
+      17,
+      42
+    ],
+    "Máy hút mùi": [
+      70,
+      35,
+      45
+    ],
+    "Lò vi sóng": [
+      48,
+      29,
+      39
+    ],
+    "Lò nướng": [
+      55,
+      35,
+      42
+    ],
+    "Nồi chiên không dầu": [
+      30,
+      34,
+      36
+    ],
+    "Máy xay sinh tố": [
+      20,
+      42,
+      20
+    ],
+    "Máy ép trái cây": [
+      23,
+      43,
+      27
+    ],
+    "Máy làm sữa hạt": [
+      22,
+      43,
+      22
+    ],
+    "Bàn ủi": [
+      30,
+      15,
+      13
+    ],
+    "Máy sấy tóc": [
+      26,
+      22,
+      10
+    ],
+    "Máy cạo râu": [
+      7,
+      17,
+      6
+    ],
+    "Máy tỉa lông": [
+      6,
+      18,
+      5
+    ],
+    "Máy tạo kiểu tóc": [
+      32,
+      8,
+      7
+    ],
+    "Máy rửa mặt": [
+      8,
+      16,
+      8
+    ],
+    "Bàn chải đánh răng điện": [
+      4,
+      25,
+      4
+    ],
+    "Máy tăm nước": [
+      15,
+      24,
+      13
+    ]
+  },
+  "category_mount_type": {
+    "TV": "wall_mount",
+    "Máy hút mùi": "wall_mount",
+    "Đèn năng lượng mặt trời": "wall_mount",
+    "Camera ngoài trời": "wall_mount",
+    "Máy nước nóng": "wall_mount",
+    "Ổ cắm điện": "wall_mount",
+    "Máy điều hòa": "wall_mount",
+    "Quạt trần": "ceiling_hanging",
+    "Bóng đèn LED": "ceiling_hanging",
+    "Máy chiếu": "table_top",
+    "Robot hút bụi": "floor_low",
+    "Bồn ngâm chân": "floor_low",
+    "Cân sức khỏe": "floor_low",
+    "Máy hút bụi": "floor_standing",
+    "Máy giặt": "floor_standing",
+    "Ghế massage": "floor_standing",
+    "Cây nước nóng lạnh": "floor_standing",
+    "Tủ lạnh": "floor_standing",
+    "Máy lọc nước": "floor_standing",
+    "Bộ lau nhà": "floor_standing",
+    "Máy sấy quần áo": "floor_standing",
+    "Máy rửa chén": "floor_standing",
+    "Quạt sưởi": "floor_standing",
+    "Tủ đông": "floor_standing",
+    "Tủ mát": "floor_standing",
+    "Quạt điều hòa": "floor_standing",
+    "Quạt điện": "floor_standing",
+    "Thùng rác": "floor_standing",
+    "Máy lọc không khí": "floor_standing",
+    "Loa karaoke": "floor_standing",
+    "Máy hút ẩm": "floor_standing",
+    "Máy rửa mặt": "table_top",
+    "Máy tăm nước": "table_top",
+    "Loa": "table_top",
+    "Ấm đun nước": "table_top",
+    "Laptop": "table_top",
+    "Đèn điện/đèn sạc": "table_top",
+    "Bếp gas": "table_top",
+    "Nồi chiên không dầu": "table_top",
+    "Hộp đựng đồ": "table_top",
+    "Thiết bị massage": "table_top",
+    "Máy tạo kiểu tóc": "table_top",
+    "Nồi cơm điện": "table_top",
+    "Bếp hồng ngoại": "table_top",
+    "Lò nướng": "table_top",
+    "Máy xay sinh tố": "table_top",
+    "Máy ép trái cây": "table_top",
+    "Máy làm sữa hạt": "table_top",
+    "Bàn ủi": "table_top",
+    "Màn hình máy tính": "table_top",
+    "Máy tính để bàn": "table_top",
+    "Camera trong nhà": "table_top",
+    "Lò vi sóng": "table_top",
+    "Máy sấy tóc": "table_top",
+    "Máy pha cà phê": "table_top",
+    "Máy cạo râu": "table_top",
+    "Máy tỉa lông": "table_top",
+    "Khay/kệ đựng đồ": "table_top",
+    "Bếp từ": "table_top",
+    "Bàn chải đánh răng điện": "table_top",
+    "Máy chơi game": "table_top",
+    "Microphone": "table_top"
+  },
+  "mount_to_surface": {
+    "floor_standing": "floor",
+    "floor_low": "floor",
+    "table_top": "table",
+    "wall_mount": "wall",
+    "ceiling_hanging": "ceiling"
+  },
+  "wall_plane_policy_v83": {
+    "corner_band_image_fraction": 0.023,
+    "corner_band_min_px": 9,
+    "uncertain_edge_image_fraction": 0.12,
+    "bbox_same_plane_min_fraction": 0.995,
+    "allow_side_wall_mount": false,
+    "min_side_change_wall_height_fraction": 0.035,
+    "min_corner_fit_improvement": 0.34,
+    "min_plane_area_image_fraction": 0.025,
+    "debug_wall_planes": true
+  },
+  "wall_corner_visual_policy_v87": {
+    "left_roi_fraction": [
+      0.16,
+      0.55
+    ],
+    "right_roi_fraction": [
+      0.45,
+      0.86
+    ],
+    "scan_y_fraction": [
+      0.04,
+      0.75
+    ],
+    "min_wall_pair_row_fraction": 0.22,
+    "min_wall_strip_coverage": 0.62,
+    "min_lab_appearance_step": 18.0,
+    "min_strong_contrast_row_fraction": 0.45,
+    "strong_contrast_lab_step": 22.0,
+    "minimum_corner_score": 21.0,
+    "min_vertical_line_fraction": 0.15,
+    "max_vertical_line_slant_fraction": 0.13,
+    "min_side_wall_continuity": 0.46,
+    "corner_band_image_fraction": 0.034,
+    "corner_band_min_px": 12,
+    "geometry_disagreement_fraction": 0.07,
+    "use_rgb_vertical_seams": true,
+    "debug": true
+  },
+  "lighting_policy_v88": {
+    "enabled": true,
+    "auto_correct_room_exposure": true,
+    "dark_scene_median_threshold": 68.0,
+    "bright_scene_median_threshold": 213.0,
+    "target_dark_scene_median": 87.0,
+    "target_bright_scene_median": 198.0,
+    "room_exposure_gain_min": 0.91,
+    "room_exposure_gain_max": 1.16,
+    "local_ring_fraction_of_bbox": 0.28,
+    "local_ring_min_px": 16,
+    "min_local_sample_pixels": 60,
+    "object_gain_min": 0.74,
+    "object_gain_max": 1.24,
+    "local_vs_surface_strength": 0.72,
+    "ambient_strength": 0.26,
+    "neutral_scene_luma": 165.0,
+    "object_contrast_min": 0.92,
+    "object_contrast_max": 1.08,
+    "color_cast_strength": 0.16,
+    "max_color_channel_bias": 0.055,
+    "tv_relighter_strength": 0.5,
+    "debug": true
+  },
+  "scene_relative_object_brightness_v820": {
+    "enabled": true,
+    "relative_brightness": 0.8,
+    "local_scene_weight": 0.55,
+    "local_padding_fraction": 0.25,
+    "local_padding_min_px": 12,
+    "min_local_sample_pixels": 64,
+    "alpha_visible_threshold": 64,
+    "min_rgb_exposure_gain": 0.25,
+    "max_rgb_exposure_gain": 2.0,
+    "max_samples_for_exposure_search": 12000,
+    "exposure_binary_steps": 15
+  },
+  "tv_wall_first_policy_v811": {
+    "enabled": true,
+    "allow_side_wall": true,
+    "minimum_plane_area_fraction": 0.035,
+    "minimum_plane_width_fraction": 0.16,
+    "min_bbox_plane_coverage": 0.93,
+    "max_forbidden_overlap_fraction": 0.005,
+    "corner_band_image_fraction": 0.028,
+    "corner_band_min_px": 10,
+    "unknown_corner_edge_fraction": 0.06,
+    "visual_corner_min_score": 21.0,
+    "preferred_floor_gap_fraction": 0.15,
+    "floor_gap_options": [
+      0.15,
+      0.13,
+      0.17,
+      0.1,
+      0.19,
+      0.08,
+      0.2
+    ],
+    "min_floor_gap_fraction": 0.08,
+    "max_floor_gap_fraction": 0.2,
+    "min_top_gap_fraction": 0.08,
+    "tv_wall_width_floor_ratio": 0.13,
+    "tv_wall_width_cap_ratio": 0.57,
+    "horizontal_grid_image_fraction": 0.009,
+    "min_free_corner_distance_px": 4,
+    "debug": true
+  },
+  "tv_wall_geometry_v812": {
+    "enabled": true,
+    "measured_wall_height_cm": null,
+    "assumed_wall_height_cm": 265.0,
+    "seated_eye_level_cm": 108.0,
+    "minimum_eye_level_cm": 85.0,
+    "maximum_eye_level_cm": 130.0,
+    "eye_level_trials_cm": [
+      108.0,
+      102.0,
+      115.0,
+      95.0,
+      122.0
+    ],
+    "horizontal_foreshortening_strength": 0.36,
+    "foreshortening_bounds": [
+      0.8,
+      1.0
+    ],
+    "depth_correction_bounds": [
+      0.94,
+      1.06
+    ],
+    "perspective_warp": true,
+    "perspective_strength": 0.8,
+    "maximum_tv_plane_width_fraction": 0.69,
+    "minimum_usable_tv_width_px": 45,
+    "minimum_plane_coverage": 0.94,
+    "edge_clearance_image_fraction": 0.012,
+    "candidate_step_image_fraction": 0.008,
+    "prefer_front_wall_score_bonus": 0.05,
+    "debug": true
+  },
+  "status_names_vi": {
+    "suggested_unverified": "Có vùng đề xuất (chưa xác minh)",
+    "unsupported_product": "Thiếu cấu hình sản phẩm",
+    "surface_not_allowed": "Trần chỉ dành cho đèn chùm hoặc quạt trần",
+    "segmentation_unavailable": "Không có mask phân đoạn",
+    "no_surface_detected": "Không nhận diện được bề mặt",
+    "missing_anchor": "Không thấy vật thể tham chiếu",
+    "invalid_metadata": "Metadata không hợp lệ",
+    "no_safe_region": "Không có vùng an toàn",
+    "no_relation_satisfying_region": "Không có vùng thỏa quan hệ vật thể",
+    "no_ceiling_detected": "Không nhận diện được mép trần",
+    "no_ceiling_satisfying_region": "Máy lạnh không sát dưới trần",
+    "overlap_rejected": "Trùng vật thể/vùng đã đặt",
+    "blocked_by_scene_rules": "Không đạt rule bề mặt/vật cản"
+  },
+  "tv_ac_pair_policy_v810": {
+    "enabled": true,
+    "tv_inches_to_ac_width_ratio": [
+      [
+        32,
+        1.02
+      ],
+      [
+        43,
+        0.96
+      ],
+      [
+        50,
+        0.87
+      ],
+      [
+        55,
+        0.8
+      ],
+      [
+        65,
+        0.68
+      ],
+      [
+        75,
+        0.59
+      ],
+      [
+        85,
+        0.52
+      ]
+    ],
+    "reference_aircon_width_cm": 95.0,
+    "aircon_sku_width_correction_min": 0.85,
+    "aircon_sku_width_correction_max": 1.17,
+    "relative_depth_ratio_min": 0.9,
+    "relative_depth_ratio_max": 1.1,
+    "aircon_to_tv_ratio_multiplier": 1.0,
+    "final_ratio_min": 0.43,
+    "final_ratio_max": 1.08,
+    "min_adjustment_from_planned": 0.48,
+    "max_adjustment_from_planned": 2.4,
+    "max_rendered_ratio_error": 0.055,
+    "min_valid_physical_ratio": 0.25,
+    "max_valid_physical_ratio": 2.25,
+    "debug": true
+  },
+  "depth_scale_policy_v82": {
+    "tv_factor_bounds": [
+      0.94,
+      1.08
+    ],
+    "aircon_factor_bounds": [
+      0.82,
+      1.24
+    ],
+    "depth_scale_strength": 0.8,
+    "aircon_reference_width_image_ratio": 0.215,
+    "aircon_min_width_image_ratio": 0.17,
+    "aircon_max_width_image_ratio": 0.32,
+    "aircon_aspect_bounds": [
+      2.2,
+      4.8
+    ],
+    "aircon_min_rendered_footprint_fraction": 0.8
+  },
+  "floor_only_wall_policy_v86": {
+    "minimum_floor_columns_fraction": 0.32,
+    "minimum_wall_height_image_fraction": 0.26,
+    "minimum_wall_coverage_in_column": 0.14,
+    "upper_visible_wall_gap_fraction": 0.025,
+    "ac_floor_gap_min_wall_fraction": 0.52,
+    "ac_floor_gap_preferred_wall_fraction": 0.73,
+    "ac_floor_gap_max_wall_fraction": 0.86,
+    "ac_candidate_floor_gap_options": [
+      0.73,
+      0.68,
+      0.78,
+      0.63,
+      0.83,
+      0.57
+    ],
+    "ac_min_wall_mask_coverage": 0.965,
+    "max_scan_candidates": 240
+  },
+  "known_reference_dimensions_cm": {
+    "Sofa": [
+      200,
+      85
+    ],
+    "Chair": [
+      52,
+      88
+    ],
+    "Armchair": [
+      72,
+      93
+    ],
+    "TV": [
+      110,
+      65
+    ],
+    "Television": [
+      110,
+      65
+    ],
+    "Table": [
+      110,
+      55
+    ],
+    "Dining table": [
+      140,
+      75
+    ],
+    "Desk": [
+      120,
+      75
+    ],
+    "Bed": [
+      160,
+      55
+    ],
+    "Refrigerator": [
+      70,
+      170
+    ],
+    "Door": [
+      85,
+      205
+    ],
+    "Window": [
+      120,
+      125
+    ]
+  },
+  "min_spatial_pair_samples": 8,
+  "spatial_priors": {},
+  "surface_names_vi": {
+    "floor": "sàn",
+    "wall": "tường",
+    "table": "bàn/kệ",
+    "ceiling": "trần"
+  },
+  "tv_ac_wall_scale_v84": {
+    "measured_front_wall_width_cm": null,
+    "assumed_front_wall_width_cm": 350.0,
+    "tv_wall_width_fraction_bounds": [
+      0.13,
+      0.56
+    ],
+    "aircon_wall_width_fraction_bounds": [
+      0.15,
+      0.43
+    ],
+    "tv_relative_depth_factor_bounds": [
+      0.9,
+      1.1
+    ],
+    "aircon_relative_depth_factor_bounds": [
+      0.88,
+      1.17
+    ],
+    "relative_depth_strength": 0.45,
+    "minimum_front_wall_width_image_fraction": 0.23,
+    "min_wall_depth_pixels": 35,
+    "min_reliable_rows": 12,
+    "wall_width_quantile": 0.78,
+    "debug_scale": false
+  },
+  "tv_scale_policy": {
+    "assumed_diagonal_inch": 55,
+    "min_diagonal_inch": 24,
+    "max_diagonal_inch": 100,
+    "width_ratio_for_55inch": 0.32,
+    "min_width_image_ratio": 0.22,
+    "max_width_image_ratio": 0.54,
+    "aspect_ratio": 1.7777777777777777,
+    "cabinet_min_width_image_ratio": 0.28,
+    "cabinet_max_tv_width_fraction": 0.92,
+    "min_alpha_silhouette_aspect_ratio": 1.3,
+    "max_alpha_silhouette_aspect_ratio": 2.8,
+    "min_rendered_fraction_of_placement_width": 0.82
+  },
+  "tv_wall_height_rule": {
+    "floor_gap_min_wall_fraction": 0.08,
+    "floor_gap_max_wall_fraction": 0.2,
+    "preferred_floor_gap_wall_fraction": 0.15,
+    "ceiling_gap_min_wall_fraction": 0.12,
+    "ceiling_gap_max_wall_fraction": 0.79,
+    "min_wall_height_image_fraction": 0.3,
+    "minimum_valid_columns_fraction": 0.67
+  },
+  "tv_wall_selection_v818": {
+    "enabled": true,
+    "front_plane_names": [
+      "tv_plane_front"
+    ],
+    "unresolved_as_primary_only_when_no_front": true,
+    "side_plane_names": [
+      "tv_plane_left",
+      "tv_plane_right"
+    ],
+    "max_wall_center_offset_fraction": 0.1,
+    "center_trials_fraction": [
+      0.0,
+      -0.02,
+      0.02,
+      -0.04,
+      0.04,
+      -0.06,
+      0.06,
+      -0.08,
+      0.08,
+      -0.1,
+      0.1
+    ],
+    "min_wall_columns": 16,
+    "min_bbox_width_px": 45,
+    "min_visible_wall_width_fraction": 0.1,
+    "wall_center_sample_columns": 160,
+    "minimum_wall_height_fraction_image": 0.18,
+    "debug": true
+  }
+}

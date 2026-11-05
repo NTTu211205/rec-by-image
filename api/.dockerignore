@@ -1,0 +1,29 @@
+# Mọi thứ không cần trong image runtime.
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Env: biến môi trường được truyền lúc chạy (compose), không bake vào image.
+.env
+.env.*
+
+# Test & tài liệu phát triển
+tests/
+requirements-dev.txt
+README.md
+
+# Artifact rác/không dùng trong runtime
+*.log
+.DS_Store
+
+# Trong thư mục run train chỉ cần weights/best.pt — bỏ checkpoint epoch cuối
+# (cùng kích thước với best) và log/ảnh minh hoạ của quá trình train.
+artifacts/rtdetr_room_detection/weights/last.pt
+artifacts/rtdetr_room_detection/*.jpg
+artifacts/rtdetr_room_detection/*.csv
+artifacts/rtdetr_room_detection/args.yaml

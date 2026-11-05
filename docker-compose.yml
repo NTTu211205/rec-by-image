@@ -1,0 +1,116 @@
+# Toàn bộ stack: PostgreSQL + API gợi ý.
+#
+#   docker compose up -d --build      # DB + API
+#   docker compose up -d postgres     # chỉ DB
+#
+# DB tự nạp 1.413 sản phẩm từ api/data/dienmayxanh_products.csv khi volume còn trống
+# (db/init/01_schema.sql dựng 3 bảng schema `mwg`, db/init/02_seed.sql nạp dữ liệu).
+# Cùng một network nên API gọi DB qua hostname `postgres`.
+name: recommend-by-image-v5-1
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mwgshop-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mwgshop}
+      POSTGRES_USER: ${POSTGRES_USER:-mwg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mwg_secret}
+      # Deterministic collation/encoding for reproducible text sorting
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    ports:
+      - "${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # *.sql here run once, in filename order, only on an empty data volume.
+      # 01_schema.sql dựng schema `mwg` (categories, brand, product),
+      # 02_seed.sql nạp 1.413 sản phẩm (sinh từ CSV bằng scripts/gen_seed_sql.py).
+      # Sửa CSV -> chạy lại script sinh seed -> `docker compose down -v && up`.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mwg} -d ${POSTGRES_DB:-mwgshop}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    shm_size: 256mb
+    command:
+      - postgres
+      # JSONB-heavy workload: modest tuning, override in .env if needed
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - max_connections=100
+      - -c
+      - log_min_duration_statement=500
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    image: recommend-by-image-api:5.0.0
+    container_name: recommend-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./api/app:/app/app:ro
+      - ./api/artifacts:/app/artifacts:ro
+    environment:
+      # Đường dẫn TÍNH TỪ /app trong container. Cả ba file dưới đây là bắt buộc:
+      # thiếu file nào thì API dừng khởi động và báo rõ đường dẫn (không dự phòng).
+      MODEL_PATH: artifacts/rtdetr_room_detection/weights/best.pt
+      COOCCURRENCE_MATRIX_PATH: artifacts/matrix/cooccurrence_matrix.json
+      CATEGORY_ROOM_SCORES_PATH: artifacts/matrix/category_room_scores.json
+
+      # Catalog sản phẩm: CHỈ PostgreSQL schema `mwg` — không còn fallback CSV.
+      # Hostname service trong cùng network.
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-mwgshop}
+      DB_USER: ${POSTGRES_USER:-mwg}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-mwg_secret}
+      DB_SCHEMA: mwg
+
+      # Container không có GPU -> luôn CPU.
+      MODEL_DEVICE: cpu
+      # Cell 9: đối chiếu class checkpoint với cooccurrence_matrix.json.
+      REQUIRE_CLASS_MATCH: "true"
+
+      # Ghi đè tham số gợi ý khi cần, không phải build lại image.
+      DEFAULT_ROOM_TYPE: "${DEFAULT_ROOM_TYPE:-living_room}"
+      DEFAULT_TOP_K: "${DEFAULT_TOP_K:-10}"
+      DEFAULT_MIN_SCORE: "${DEFAULT_MIN_SCORE:-0.05}"
+      PRODUCTS_PER_GROUP: "${PRODUCTS_PER_GROUP:-3}"
+      MAX_UPLOAD_MB: "${MAX_UPLOAD_MB:-10}"
+
+      DOCS_ENABLED: "${DOCS_ENABLED:-true}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      REMOVE_BG_BASE_URL: "${REMOVE_BG_BASE_URL:-}"
+      REMOVE_BG_API_URL: "${REMOVE_BG_API_URL:-}"
+    # Model nạp + warmup một lần khi khởi động; healthcheck khai trong Dockerfile.
+    stop_grace_period: 10s
+
+  adminer:
+    image: adminer:4
+    container_name: mwgshop-adminer
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "${ADMINER_PORT:-58080}:8080"
+
+volumes:
+  pgdata:

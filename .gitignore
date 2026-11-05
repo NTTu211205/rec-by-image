@@ -1,0 +1,19 @@
+.env
+*.log
+.pgdata/
+data/raw/*.json
+!data/raw/.gitkeep
+# Crawl gốc 100 MB — không commit
+data/data_mwg.json
+build/
+backups/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Artifact model: nhị phân lớn, copy từ nơi train ra (không sinh trong repo).
+api/artifacts/rtdetr_room_detection/
