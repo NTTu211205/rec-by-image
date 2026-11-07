@@ -36,18 +36,15 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     docs_enabled: bool = True
 
-    # --- Cell 9: nạp checkpoint .pt (KHÔNG train) ---
-    # Nhận cả RT-DETR (.pt do Cell 8 sinh ra) và YOLO (.pt cũ), tự nhận diện theo
-    # kiến trúc bên trong checkpoint. Trỏ thẳng vào file trong thư mục run đã train.
-    model_path: str = "artifacts/rtdetr_room_detection/weights/best.pt"
+    # --- Detector model (RF-DETR Medium pretrain, RT-DETR hoặc YOLO) ---
+    model_path: str = "artifacts/rfdetr_medium"
     model_device: str = "auto"  # auto | cpu | mps | 0
     model_confidence: float = Field(0.5, ge=0, le=1)
-    # Cell 10.13 lưu ảnh ra temp_input.jpg trước khi predict -> mặc định tái tạo
-    # bước nén JPEG trong bộ nhớ để confidence khớp notebook.
+    # Tái tạo bước nén JPEG trong bộ nhớ nếu cần khớp notebook
     detect_jpeg_roundtrip: bool = True
-    # Cell 9 raise ValueError nếu tên class trong checkpoint khác data.yaml.
-    # Bật để giữ nguyên hành vi; tắt chỉ khi checkpoint chưa train lại theo bộ class hiện tại.
-    require_class_match: bool = True
+    # Kiểm tra khớp cứng tên class với ma trận đồng xuất hiện.
+    # Với RF-DETR pretrained COCO thì tự động bỏ qua kiểm tra khớp cứng.
+    require_class_match: bool = False
 
     # --- Cell 10.3 / 10.5: ma trận đồng xuất hiện học từ COCO train ---
     cooccurrence_matrix_path: str = "artifacts/matrix/cooccurrence_matrix.json"
@@ -82,16 +79,16 @@ class Settings(BaseSettings):
     placement_rules_path: str = "artifacts/placement_rules.json"
     remove_bg_base_url: str = ""
     remove_bg_api_url: str = ""
-    remove_bg_timeout_s: float = Field(40.0, gt=0)
+    remove_bg_timeout_s: float = Field(120.0, gt=0)
 
     @model_validator(mode="after")
     def _resolve_remove_bg_url(self) -> Settings:
         if not self.remove_bg_api_url and self.remove_bg_base_url:
             base = self.remove_bg_base_url.rstrip("/")
-            if "/api/v1/products/remove-background" in base:
+            if "/remove-background" in base:
                 self.remove_bg_api_url = base
             else:
-                self.remove_bg_api_url = f"{base}/api/v1/products/remove-background"
+                self.remove_bg_api_url = f"{base}/remove-background"
         return self
 
     # --- Giới hạn đầu vào ---

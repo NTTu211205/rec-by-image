@@ -6,7 +6,7 @@ import asyncio
 import base64
 import logging
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from fastapi.responses import Response
 
 from app.core.config import PRODUCTS_PER_GROUP_MAX, TOP_K_MAX, Settings, get_settings
@@ -190,6 +190,7 @@ async def recommend_from_image(
     include_in_schema=False,
 )
 async def recommend_and_render_from_image(
+    request: Request,
     state: AppStateDep,
     settings: Settings = Depends(get_settings),
     image: UploadFile = File(
@@ -270,23 +271,29 @@ async def recommend_and_render_from_image(
             category_id=category,
         )
         # Spatial placement and photometric render (V8.20)
+        client_user_agent = request.headers.get("user-agent")
         render_result = await asyncio.get_running_loop().run_in_executor(
             state.executor,
             render_room_recommendations,
             img,
             rec_result,
             settings.remove_bg_api_url,
+            None,
+            client_user_agent,
         )
     finally:
         state.release()
 
+    rendered_count = render_result.get("rendered_count", 0)
+    total_items = len(render_result.get("items", []))
     logger.info(
-        "render done",
+        "Render hoàn tất: %d/%d sản phẩm được ghép thành công vào ảnh phòng '%s' (phát hiện %d vật thể)",
+        rendered_count, total_items, room, len(detected),
         extra={
             "event": "render",
             "detected": len(detected),
-            "rendered": render_result.get("rendered_count", 0),
-            "total_items": len(render_result.get("items", [])),
+            "rendered": rendered_count,
+            "total_items": total_items,
             "room_type": room,
         },
     )

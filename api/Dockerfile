@@ -44,7 +44,7 @@ COPY scripts ./scripts
 COPY artifacts ./artifacts
 
 # Chạy bằng user thường; artifacts/data là chỉ-đọc nên không cần quyền ghi.
-RUN useradd --create-home --uid 1000 app \
+RUN id -u app >/dev/null 2>&1 || useradd --create-home --uid 1000 app \
     && mkdir -p "$YOLO_CONFIG_DIR" \
     && chown -R app:app "$YOLO_CONFIG_DIR"
 USER app

@@ -176,9 +176,9 @@ class HealthResponse(BaseModel):
 
     status: str = Field(..., description="`ready` hoặc `not_ready`.")
     ready: bool = Field(..., description="Đã nạp xong chưa.")
-    model_family: str | None = Field(None, description="`rtdetr` hoặc `yolo`.")
+    model_family: str | None = Field(None, description="`rfdetr`, `rtdetr` hoặc `yolo`.")
     detector_classes: int = Field(0, description="Số class của checkpoint.")
-    model_source: str | None = Field(None, description="Nguồn checkpoint `.pt`.")
+    model_source: str | None = Field(None, description="Nguồn model detector.")
     room_scores_source: str | None = Field(
         None, description="Nguồn `W(c, r)`."
     )

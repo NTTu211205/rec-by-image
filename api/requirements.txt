@@ -7,11 +7,10 @@ pydantic-settings==2.16.1
 python-multipart==0.0.32
 pillow==12.3.0
 numpy==2.5.4
-# Chỉ để ĐỌC checkpoint .pt (không train)
-ultralytics==8.4.189
 torch==2.14.1
 # Cell 10.6: nguồn W(c, r) chính là PostgreSQL
 psycopg2-binary==2.9.13
 scipy==1.18.1
 transformers==5.22.1
 requests==2.34.2
+opencv-python-headless==5.0.0.93

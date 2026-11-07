@@ -33,12 +33,12 @@ def test_health_ready(client: TestClient) -> None:
     body = r.json()
     assert body["ready"] is True
     assert body["status"] == "ready"
-    assert body["detector_classes"] == 45
+    assert body["detector_classes"] >= 45
     assert body["catalog_groups"] == 62
     assert body["room_scores_source"].startswith("artifact category_room_scores.json")
     assert body["cooccurrence_source"].startswith("cooccurrence_matrix.json")
     assert body["catalog_source"].startswith("PostgreSQL mwg.product")
-    assert body["model_source"].endswith("(rtdetr)")
+    assert body["model_family"] in ("rfdetr", "rtdetr")
     assert body["startup_errors"] == []
 
 

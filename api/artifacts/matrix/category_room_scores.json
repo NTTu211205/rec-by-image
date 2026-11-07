@@ -1584,7 +1584,7 @@
     "balcony": 0.1
   },
   "Đèn & Đèn Pin": {
-    "living_room": 0.9,
+    "living_room": 0.3,
     "bedroom": 0.9,
     "kitchen": 0.5,
     "bathroom": 0.4,
@@ -2214,7 +2214,7 @@
     "balcony": 0.1
   },
   "Bóng đèn led": {
-    "living_room": 0.9,
+    "living_room": 0.3,
     "bedroom": 0.9,
     "kitchen": 0.5,
     "bathroom": 0.3,
@@ -3204,7 +3204,7 @@
     "balcony": 0.2
   },
   "Đèn năng lượng mặt trời": {
-    "living_room": 0.9,
+    "living_room": 0.3,
     "bedroom": 0.9,
     "kitchen": 0.5,
     "bathroom": 0.3,
@@ -3213,7 +3213,7 @@
     "balcony": 0.4
   },
   "Đèn sưởi": {
-    "living_room": 0.8,
+    "living_room": 0.5,
     "bedroom": 0.9,
     "kitchen": 0.2,
     "bathroom": 0.3,
@@ -3231,7 +3231,7 @@
     "balcony": 0.0
   },
   "Đèn điện, đèn sạc": {
-    "living_room": 0.9,
+    "living_room": 0.4,
     "bedroom": 0.9,
     "kitchen": 0.5,
     "bathroom": 0.3,

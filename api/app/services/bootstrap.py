@@ -107,6 +107,16 @@ def _require_file(settings: Settings, path_str: str, what: str) -> Path:
     return path
 
 
+def _resolve_model_path(settings: Settings, path_str: str) -> Path | str:
+    """Đường dẫn checkpoint model: hỗ trợ file .pt, thư mục model (RF-DETR), hoặc Hugging Face repo ID."""
+    path = settings.resolve(path_str)
+    if path.is_file() or path.is_dir():
+        return path
+    if "/" in path_str and not path_str.startswith((".", "/")):
+        return path_str
+    raise ArtifactError(f"Không tìm thấy checkpoint model hoặc model id: {path_str}")
+
+
 def build_state(settings: Settings) -> AppState:
     """Nạp ma trận + điểm phòng + checkpoint .pt + catalog PostgreSQL.
 
@@ -132,17 +142,20 @@ def build_state(settings: Settings) -> AppState:
     score_table: RoomScoreTable = load_room_scores(scores_path)
     state.room_scores_source = f"artifact {score_table.source}"
 
-    # --- 3) Catalog PostgreSQL (không fallback) ---
+    # --- 3) Catalog PostgreSQL (1 kết nối duy nhất cho toàn dự án) ---
     cfg = db_config(settings)
-    name_to_code = load_category_names(cfg, settings.db_schema)
-    room_scores = score_table.bind(name_to_code)
+    catalog = load_catalog_from_db(cfg, settings.db_schema)
+    state.catalog = catalog
+    state.catalog_source = catalog.source
+
+    room_scores = score_table.bind(catalog.name_to_code)
     state.room_scores_source = (
         f"artifact {score_table.source} + {settings.db_schema}.categories"
     )
 
-    catalog = load_catalog_from_db(cfg, settings.db_schema)
-    state.catalog = catalog
-    state.catalog_source = catalog.source
+    # Khởi tạo category registry cho spatial placement từ catalog đã tải (không mở thêm kết nối)
+    from app.services.placement import init_category_registry
+    init_category_registry(catalog.categories)
 
     if settings.default_room_type not in ROOM_CODES:
         raise ArtifactError(
@@ -162,22 +175,21 @@ def build_state(settings: Settings) -> AppState:
         default_products_per_group=settings.products_per_group,
     )
 
-    # --- 4) Checkpoint .pt ---
-    model_path = _require_file(settings, settings.model_path, "checkpoint model")
+    # --- 4) Model Detector (RF-DETR, RT-DETR hoặc YOLO) ---
+    model_path = _resolve_model_path(settings, settings.model_path)
     detector = Detector(model_path, settings.model_device, settings.detect_jpeg_roundtrip)
     detector.load()
 
-    # Cell 9: checkpoint phải khớp bộ class của ma trận — nếu lệch thì `P_cooc`
-    # tra sai cột mà không báo gì. Đối chiếu với ma trận (đã có sẵn) thay vì
-    # annotation COCO, nên không cần `data/coco` khi chạy.
+    # Đối chiếu class của checkpoint với ma trận (nếu yêu cầu)
     if settings.require_class_match:
         detector.check_classes(cooc["classes"])
-        state.detector_classes = list(cooc["classes"])
+    state.detector_classes = list(detector.class_names)
     detector.warmup()
 
     state.detector = detector
     state.model_family = detector.family
-    state.model_source = f"{model_path.name} ({detector.family})"
+    model_name = model_path.name if isinstance(model_path, Path) else str(model_path)
+    state.model_source = f"{model_name} ({detector.family})"
     logger.info(
         "startup complete",
         extra={

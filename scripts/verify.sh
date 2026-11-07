@@ -70,7 +70,10 @@ echo
 echo "🎯 artifact (bắt buộc, không dự phòng)"
 for f in api/artifacts/matrix/cooccurrence_matrix.json \
          api/artifacts/matrix/category_room_scores.json \
-         api/artifacts/rtdetr_room_detection/weights/best.pt; do
+         api/artifacts/rfdetr_medium/model.safetensors \
+         api/artifacts/sam2_small/model.safetensors \
+         api/artifacts/grounding_dino_base/model.safetensors \
+         api/artifacts/depth_anything_v2_small/model.safetensors; do
   if [[ -f "$f" ]]; then
     printf '  ✅ %-52s %s\n' "$f" "$(du -h "$f" | cut -f1)"
   else

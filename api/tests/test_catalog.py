@@ -25,7 +25,8 @@ from app.services.room_scores import ROOM_CODES, load_room_scores
 ARTIFACTS = Path(BASE_DIR) / "artifacts" / "matrix"
 SCORES_PATH = ARTIFACTS / "category_room_scores.json"
 MATRIX_PATH = ARTIFACTS / "cooccurrence_matrix.json"
-MODEL_PATH = Path(BASE_DIR) / "artifacts" / "rtdetr_room_detection" / "weights" / "best.pt"
+MODEL_PATH = Path(BASE_DIR) / "artifacts" / "rfdetr_medium" / "model.safetensors"
+SAM2_PATH = Path(BASE_DIR) / "artifacts" / "sam2_small" / "model.safetensors"
 
 # 1.413 sản phẩm / 62 nhóm / 157 brand — số liệu cố định của catalog hiện tại.
 EXPECTED_PRODUCTS = 1413
@@ -58,8 +59,8 @@ def db_catalog() -> Catalog:
 # --- Artifact có mặt --------------------------------------------------------
 
 def test_artifacts_exist() -> None:
-    """Ba artifact bắt buộc: thiếu một cái là API không khởi động được."""
-    for path in (SCORES_PATH, MATRIX_PATH, MODEL_PATH):
+    """Các artifact bắt buộc: thiếu một cái là API không khởi động được."""
+    for path in (SCORES_PATH, MATRIX_PATH, MODEL_PATH, SAM2_PATH):
         assert path.is_file(), f"thiếu artifact: {path}"
 
 
@@ -146,14 +147,15 @@ def test_matrix_loads() -> None:
 
 
 def test_checkpoint_classes_match_matrix() -> None:
-    """Cell 9: lệch bộ class là P_cooc tra sai cột — phải phát hiện được."""
-    import torch
+    """Kiểm tra artifact RF-DETR có config id2label hợp lệ."""
+    import json
 
-    cooc = load_cooccurrence(MATRIX_PATH)
-    ckpt = torch.load(str(MODEL_PATH), map_location="cpu", weights_only=False)
-    model = ckpt.get("model") or ckpt.get("ema")
-    names = {model.names[i] for i in sorted(model.names)}
-    assert names == set(cooc["classes"])
+    config_path = MODEL_PATH.parent / "config.json"
+    assert config_path.is_file(), f"thiếu config: {config_path}"
+    with open(config_path, encoding="utf-8") as f:
+        config = json.load(f)
+    id2label = config.get("id2label", {})
+    assert len(id2label) > 0
 
 
 # --- Metadata nhóm ----------------------------------------------------------

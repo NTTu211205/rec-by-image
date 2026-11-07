@@ -32,6 +32,8 @@ class Catalog:
         source: str,
         category_ids: dict[str, str] | None = None,
         category_names: dict[str, str] | None = None,
+        name_to_code: dict[str, str] | None = None,
+        categories: list[dict[str, str]] | None = None,
     ):
         self.groups: dict[str, list[Product]] = groups
         self.source = source
@@ -42,6 +44,8 @@ class Catalog:
         }
         self.category_ids: dict[str, str] = category_ids or {}
         self.category_names: dict[str, str] = category_names or {}
+        self.name_to_code: dict[str, str] = name_to_code or {}
+        self.categories: list[dict[str, str]] = categories or []
 
     @property
     def group_codes(self) -> list[str]:
@@ -135,10 +139,16 @@ def load_catalog_from_db(cfg: dict, schema: str = "mwg") -> Catalog:
                 )
                 rows = cur.fetchall()
 
-                cur.execute(f"SELECT id, name FROM {schema}.categories")
+                cur.execute(f"SELECT id, name FROM {schema}.categories ORDER BY id")
                 cat_rows = cur.fetchall()
                 category_ids = {str(r["id"]): str(r["id"]) for r in cat_rows}
                 category_names = {str(r["id"]): str(r["name"]) for r in cat_rows}
+                name_to_code = {str(r["name"]): str(r["id"]) for r in cat_rows}
+                categories = [
+                    {"id": str(r["id"]).strip(), "name": str(r["name"]).strip()}
+                    for r in cat_rows
+                    if r.get("id") and r.get("name")
+                ]
                 table_name = "products"
 
             # 2. Schema cũ: product + categories + brand
@@ -166,7 +176,7 @@ def load_catalog_from_db(cfg: dict, schema: str = "mwg") -> Catalog:
                 rows = cur.fetchall()
 
                 cur.execute(
-                    f"SELECT category_tag, category_id, category_name FROM {schema}.categories"
+                    f"SELECT category_tag, category_id, category_name FROM {schema}.categories ORDER BY category_tag"
                 )
                 cat_rows = cur.fetchall()
                 category_ids = {
@@ -175,6 +185,14 @@ def load_catalog_from_db(cfg: dict, schema: str = "mwg") -> Catalog:
                 category_names = {
                     str(r["category_tag"]): str(r["category_name"]) for r in cat_rows
                 }
+                name_to_code = {
+                    str(r["category_name"]): str(r["category_tag"]) for r in cat_rows
+                }
+                categories = [
+                    {"id": str(r["category_id"]).strip(), "name": str(r["category_name"]).strip()}
+                    for r in cat_rows
+                    if r.get("category_id") and r.get("category_name")
+                ]
                 table_name = "product"
             else:
                 raise DataSourceError(
@@ -189,17 +207,25 @@ def load_catalog_from_db(cfg: dict, schema: str = "mwg") -> Catalog:
             f"{schema}.{table_name} rỗng — chưa có sản phẩm nào. Chạy `make import`."
         )
 
+    duplicates = len(cat_rows) - len(name_to_code)
+    if duplicates:
+        raise DataSourceError(
+            f"{schema}.categories có {duplicates} tên trùng — không ghép được điểm phòng theo tên."
+        )
+
     groups: dict[str, list[Product]] = defaultdict(list)
     for row in rows:
         groups[row["group_code"]].append(_row_to_product(row))
 
-    logger.info("nạp catalog từ PostgreSQL: %d sản phẩm / %d nhóm",
-                len(rows), len(groups), extra={"event": "catalog_db"})
+    logger.info("Nạp catalog từ PostgreSQL (kết nối duy nhất): %d sản phẩm / %d nhóm / %d danh mục",
+                len(rows), len(groups), len(categories), extra={"event": "catalog_db"})
     return Catalog(
         dict(groups),
         source=f"PostgreSQL {schema}.{table_name} ({len(rows)} sản phẩm)",
         category_ids=category_ids,
         category_names=category_names,
+        name_to_code=name_to_code,
+        categories=categories,
     )
 
 

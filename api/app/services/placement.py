@@ -10,6 +10,7 @@ import logging
 import math
 import mimetypes
 import os
+import platform
 import random
 import re
 import sys
@@ -38,7 +39,8 @@ from scipy.ndimage import (
 from transformers import (
     AutoImageProcessor,
     AutoModelForDepthEstimation,
-    Mask2FormerForUniversalSegmentation,
+    Sam2Model,
+    Sam2Processor,
 )
 
 logger = logging.getLogger("app.placement")
@@ -72,8 +74,30 @@ pd = _DummyPD()
 
 # Constants & Placement Models
 ALLOWED_SURFACES = ["wall", "floor", "ceiling", "table"]
-SEGMENTATION_MODEL_ID = "facebook/mask2former-swin-large-ade-semantic"
-DEPTH_MODEL_ID = "Intel/dpt-large"
+_LOCAL_SAM2_DIR = Path(__file__).resolve().parents[2] / "artifacts" / "sam2_small"
+SEGMENTATION_MODEL_ID = str(_LOCAL_SAM2_DIR) if _LOCAL_SAM2_DIR.is_dir() else "facebook/sam2-hiera-small"
+_LOCAL_GROUNDING_DINO_DIR = Path(__file__).resolve().parents[2] / "artifacts" / "grounding_dino_base"
+GROUNDING_DINO_MODEL_ID = str(_LOCAL_GROUNDING_DINO_DIR) if _LOCAL_GROUNDING_DINO_DIR.is_dir() else "IDEA-Research/grounding-dino-base"
+GROUNDING_DINO_SURFACE_PROMPT = "wall. floor. ceiling."
+GROUNDING_DINO_BOX_THRESHOLD = 0.24
+GROUNDING_DINO_TEXT_THRESHOLD = 0.22
+GROUNDING_DINO_MAX_BOXES_PER_SURFACE = 8
+GROUNDING_DINO_MAX_TOTAL_BOXES = 18
+GROUNDING_DINO_MIN_BOX_FRAC = {'wall': 0.025, 'floor': 0.012, 'ceiling': 0.009}
+GROUNDING_DINO_MAX_BOX_FRAC = {'wall': 0.98, 'floor': 0.91, 'ceiling': 0.85}
+GROUNDING_DINO_OFFLOAD_TO_CPU = True
+_GROUNDING_DINO_CACHE = {}
+_GROUNDING_DINO_LAST_RESULT = {'detections': [], 'status': 'not_run'}
+_SAM2_MODEL_CACHE = {}
+
+SAM_MAX_BOX_PROMPTS = 24
+SAM_MASK_MIN_IOU = 0.55
+SAM_MIN_AREA = {'wall': 0.055, 'floor': 0.020, 'ceiling': 0.012, 'table': 0.001}
+SAM_MAX_AREA = {'wall': 0.83, 'floor': 0.69, 'ceiling': 0.55, 'table': 0.55}
+SAM_DEBUG_MASKS = True
+SAM_MANUAL_OBSTACLES = []
+_LOCAL_DEPTH_DIR = Path(__file__).resolve().parents[2] / "artifacts" / "depth_anything_v2_small"
+DEPTH_MODEL_ID = str(_LOCAL_DEPTH_DIR) if _LOCAL_DEPTH_DIR.is_dir() else "depth-anything/Depth-Anything-V2-Small-hf"
 _SEG_CACHE = {}
 _DEPTH_CACHE = {}
 
@@ -97,13 +121,12 @@ API_CATEGORY_PRODUCTS = {}
 PRODUCT_IMAGE_DOMAINS = ("tgdd.vn", "dienmayxanh.com", "mwgshop.vn")
 MAX_PRODUCT_IMAGE_BYTES = 15 * 1024 * 1024
 MAX_API_PNG_BYTES = 25 * 1024 * 1024
-API_TIMEOUT = 45.0
-REMOVE_BG_PRODUCT_TYPE_LOCATION = "form"
+API_TIMEOUT = (10, 120)
 REMOVE_BG_BASE_URL = os.environ.get("REMOVE_BG_BASE_URL", "").strip()
 REMOVE_BG_API_URL = os.environ.get("REMOVE_BG_API_URL", "").strip()
 if not REMOVE_BG_API_URL and REMOVE_BG_BASE_URL:
     _b = REMOVE_BG_BASE_URL.rstrip("/")
-    REMOVE_BG_API_URL = _b if "/api/v1/products/remove-background" in _b else f"{_b}/api/v1/products/remove-background"
+    REMOVE_BG_API_URL = _b if "/remove-background" in _b else f"{_b}/remove-background"
 OUTPUT_BASE = Path("/tmp/outputs")
 IMAGE_INPUT = None
 RECOMMEND_RANDOM_SEED = None
@@ -215,485 +238,78 @@ def parse_and_random_select_api_response(payload,top_k=None,seed=None):
             'raw_recommendation_response':payload}
 
 # ===== CELL 15 =====
-# C.4 — JSON mẫu KHÔNG có subcategory nên không được lấy product_type từ CSV cũ.
-# Đây là các tên CHỜ XÁC NHẬN với API remove-background; nếu backend dùng enum
-# khác thì cập nhật dictionary này. SKU không có mapping sẽ BỊ BỎ QUA khi render.
-REMOVE_BG_PRODUCT_TYPE_BY_CATEGORY_ID={
-    '2662':'massage_chair',  # Ghế Massage
-    '1844':'pillow',         # Gối, nệm
-    '941':'rug',             # Thảm trải sàn (chỉ hợp lý cho thảm thực sự)
-    '59':'fan',              # Quạt; đổi theo subtype nếu backend yêu cầu
-    '980':'tv_box',          # Tivi box & Đầu thu kỹ thuật số
-}
-REMOVE_BG_PRODUCT_TYPE_BY_GROUP={
-    'TV':'tv','Máy điều hòa':'air_conditioner',
-    'Ghế massage':'massage_chair','Quạt trần':'ceiling_fan',
-    'Quạt điện':'fan','Loa':'speaker','Loa karaoke':'karaoke_speaker',
-    'Máy lọc không khí':'air_purifier','Robot hút bụi':'robot_vacuum',
-    'Quạt điều hòa':'air_cooler','Thảm trải sàn':'rug',
-}
-
-def resolve_remove_bg_product_type(reco,product):
-    # Priority: explicitly provided by API -> category override -> known group mapping
-    explicit=str(product.get('product_type') or product.get('subcategory') or '').strip()
-    if explicit:return explicit
-    code=str(reco.get('category_id') or product.get('category_id') or '')
-    return str(REMOVE_BG_PRODUCT_TYPE_BY_CATEGORY_ID.get(code)
-               or REMOVE_BG_PRODUCT_TYPE_BY_GROUP.get(reco.get('placement_group',''))
-               or '').strip()
+# V8.28: Remove Background API chỉ nhận 01 file ảnh trong field multipart 'image'.
+# Không cần mapping product_type hay các tham số phụ.
+def resolve_remove_bg_product_type(reco, product):
+    return ""
 
 # ===== CELL 17 =====
-# B.4.1 — Danh mục ID TÍCH HỢP từ categories(1).json (434 bản ghi).
-# Có ID trùng giữa các catalog; KHÔNG bao giờ map chỉ bằng category_id.
-# Bộ dữ liệu này đã được đóng gói vào notebook: KHÔNG cần tải thêm JSON lên Colab.
-CATEGORY_REGISTRY_SOURCE = 'categories(1).json'
-CATEGORY_REGISTRY_RAW = """1427|Bút cảm ứng
-1421|Ống kính điện thoại
-137|Thẻ nhớ
-1437|Giá đỡ
-1429|Vỏ bao, Ốp lưng máy tính bảng
-2532|Bình thủy điện
-2531|Bình đun siêu tốc
-1442|Hub, cáp kết nối
-2536|AirTag, Vỏ bảo vệ AirTag
-127|Sạc dự phòng
-2556|Gậy chụp ảnh, Gimbal
-2671|Ghế gaming, ghế công thái học
-1085|Thiết bị định vị GPS
-2535|Sạc, cáp
-2554|Adapter sạc
-693|Khác
-1422|Miếng dán màn hình
-682|Vật tư y tế khác
-2116|Máy tính bảng
-913|Cân sức khỏe và phân tích cơ thể
-1086|Đồng hồ thông minh & Vòng đeo tay sức khỏe
-2643|Kim tiêm y tế
-1018|Hỗ trợ làm đẹp
-914|Bao tay và khẩu trang y tế
-1541|Nhiệt kế
-1019|Hỗ trợ kiểm soát cân nặng
-1543|Máy đo lượng đường trong máu
-2644|Máy xông khí dung
-1544|Máy đo huyết áp
-1574|Bao cao su, gel
-2642|Dầu, tinh dầu
-1669|Thuốc sát trùng & khử trùng y tế
-1972|Que thử thai
-1672|Băng gạc y tế
-1975|Cốc nguyệt san
-1974|Dung dịch vệ sinh phụ nữ
-2027|Nước súc miệng
-2028|Kem đánh răng
-2029|Hỗ trợ trắng răng
-1976|Băng vệ sinh có cánh & không cánh
-2031|Tăm, chỉ nha khoa
-2033|Bàn chải đánh răng
-2032|Bàn chải điện & phụ kiện
-300|Điện thoại
-2035|Chống muỗi & xua đuổi côn trùng
-2036|Chăm sóc tai
-2558|Bồn ngâm chân
-2034|Dụng cụ massage và trị liệu
-941|Thảm trải sàn
-1124|Móc treo
-2647|Vệ sinh mắt, mũi, tai
-1128|Hộp khăn giấy
-1129|Hộp đựng, giỏ đựng đồ
-1017|Hỗ trợ sức khỏe
-2648|Vớ, đai y khoa
-124|Thớt
-1678|Hộp đựng thực phẩm
-1430|Vỏ bao, Ốp lưng điện thoại
-2544|Muỗng, nĩa
-231|Nước xả
-1699|Miếng bọt biển, miếng chà vệ sinh
-227|Nước giặt
-1709|Bộ & Cây lau nhà
-1710|Bàn chải vệ sinh
-1686|Dụng cụ đo lường
-116|Nồi
-1732|Máy khoan, máy vặn vít & phụ kiện
-1735|Kìm
-1740|Cưa, máy cắt & máy mài
-1701|Khăn giấy, giấy ướt
-117|Chảo
-1687|Dao & kéo
-2650|Tua vít
-2663|Cọ quét sơn
-1945|Máy khuếch tán, tạo ẩm & xông tinh dầu
-2540|Ổn áp
-1844|Gối, nệm
-2541|Pin tiểu
-2121|Khóa, ổ khóa
-2113|Bình nước
-1088|Xà phòng & sữa tắm
-1091|Khử mùi cơ thể
-1436|Bông tẩy trang
-1093|Kem & sữa dưỡng thể
-979|Tẩy trang
-786|Máy tỉa lông mũi, lông tai
-1692|Dụng cụ tẩy lông
-1957|Sản phẩm dưỡng tóc
-1712|Dụng cụ rửa mặt
-359|Máy tạo kiểu tóc
-1958|Dầu xả
-2557|Tông đơ cắt tóc
-1959|Dầu gội
-2004|Tẩy tế bào chết
-355|Máy cạo râu
-75|Máy sấy tóc
-2006|Nước cân bằng da
-2007|Mặt nạ
-1990|Sữa rửa mặt
-2005|Hỗ trợ trị mụn, ngừa sẹo, mờ thâm
-980|Tivi box & Đầu thu kỹ thuật số
-981|Giá treo tivi
-2009|Kem dưỡng ẩm
-2539|Điều khiển tivi
-2534|Bình, ly giữ nhiệt
-67|Máy lọc không khí
-81|Máy hút ẩm
-357|Máy tăm nước
-2652|Siêu sắc thuốc
-2528|Bàn ủi
-38|Tivi
-42|Máy sấy quần áo
-41|Máy giặt
-1080|Thiết bị sấy khô nệm & Giày
-44|Máy nước nóng
-1083|Máy sưởi
-1078|Máy hút bụi & Thiết bị làm sạch sàn
-1498|Máy chiếu & Màn hình chiếu
-2522|Máy rửa chén
-1512|Chuông cửa
-1082|Máy lạnh
-1510|Ổ cắm điện & Dây nối
-73|Lò nướng
-58|Lò vi sóng
-59|Quạt
-76|Nồi áp suất
-1799|Tủ đông, tủ mát
-39|Tủ lạnh
-312|Máy lọc nước & Phụ kiện lọc nước
-1813|Máy pha cà phê & Phụ kiện
-1810|Nồi chiên không dầu
-1817|Máy chế biến thực phẩm & Xay thịt
-1808|Nồi cơm điện
-2525|Bếp hồng ngoại
-2526|Máy làm sữa hạt
-1816|Máy ép, xay sinh tố
-2527|Bếp ga
-2524|Bếp từ
-2530|Lẩu điện
-2529|Máy hút mùi
-2656|Máy làm sữa chua
-2657|Máy làm đá
-279|Kem
-713|Thực phẩm khác
-165|Sữa tươi
-1110|Phô mai & bột phô mai
-1109|Sữa chua
-2551|Mì - Nui - Miến khô
-1470|Dầu ăn
-1476|Mật ong và siro
-1618|Nước chấm
-2547|Gia vị rắc cơm
-2543|Sữa cho người lớn
-2549|Bột nêm
-1753|Sữa thực vật
-1756|Nước tinh khiết
-1752|Thức uống Sô cô la
-1901|Đồ ăn chế biến sẵn
-2552|Nước trái cây
-1911|Chà bông
-2646|Nước yến, yến sào
-1916|Các loại rong biển ăn liền
-1915|Kẹo
-1642|Scooters & Xe Đạp 1 Bánh
-1902|Cơm và cháo ăn liền
-1807|Nồi nấu chậm & Dụng cụ nấu chân không
-2553|Xe lắc
-2649|Xe đạp tập thể dục tại nhà
-2662|Ghế Massage
-2550|Snack - Bánh kẹo các loại
-142|Ổ Cứng Di Động
-1651|Xe Đạp
-1071|USB & OTG
-1357|Bàn Di Chuột
-2669|Túi đựng phụ kiện
-1481|Bộ Máy Tính Bàn
-2066|Đèn & Đèn Pin
-1486|Mực In & Khay Mực
-1487|Máy In, Máy Scan & Máy Photo
-1763|Màn hình máy tính
-1940|Bảng Vẽ Điện Tử
-2538|Balo, túi chống sốc
-138|Chuột Máy Tính
-1097|Bao tay trẻ em & Tất
-2537|Bàn phím
-1158|Bộ đồ liền thân
-1135|Váy
-931|Balo, túi đeo cho bé
-951|Đồng hồ trẻ em
-1282|Vali kéo
-1772|Laptop
-1102|Sữa công thức
-1297|Mắt kính
-1296|Mũ & mũ lưỡi trai
-1157|Bộ quần áo
-1607|Dép quai hậu
-1099|Tã dùng một lần
-1103|Đồ ăn nhẹ cho bé
-1104|Cháo, Thực phẩm xay nhuyễn & Ngũ cốc
-228|Nước hoa cho bé
-2545|Quần áo sơ sinh
-1824|Dụng cụ tắm & Phụ kiện
-297|Xe tập đi
-1840|Nôi & Cũi & Giường cho bé
-1846|Chăn & Quấn em bé
-2654|Máy tạo tiếng ồn trắng
-1822|Khăn lau
-1820|Sản phẩm tắm & gội cho bé
-182|Địu em bé
-187|Ghế ăn dặm
-1715|Xe đẩy
-195|Máy hâm sữa
-1850|Ghế ngồi ô tô & xe máy
-199|Miếng lót thấm sữa
-213|Yếm
-197|Máy tiệt trùng bình sữa
-1854|Túi trữ sữa
-1855|Máy hút sữa & phụ kiện
-1852|Ti giả
-1859|Đồ dùng ăn dặm
-1863|Xe đạp, Xe chòi chân & Xe điện
-1861|Dụng cụ vệ sinh bình sữa
-166|Sữa bầu
-1965|Kem dưỡng ẩm cho mẹ
-1966|Vitamin & Thực phẩm bổ sung
-1967|Chống nắng cho bé
-1862|Bình sữa & Phụ kiện
-1969|Chăm sóc mũi cho bé
-1968|Chăm sóc răng miệng cho bé
-2019|Sữa & Kem dưỡng da
-2645|Miếng dán, dụng cụ giảm đau, hạ sốt
-2020|Phấn cho bé
-1623|Mũ bảo hiểm
-1215|Quạt Cầm Tay
-1502|Máy ảnh kỹ thuật số
-1341|Camera hành trình & Camera lùi
-330|Dây đồng hồ
-1545|Micro thu âm
-2555|Micro karaoke
-2056|Camera giám sát kết nối internet
-1870|Đồ chơi xếp hình
-1933|Loa
-1536|Tai nghe nhét tai & chụp tai
-320|Chuông cửa camera
-82|Miếng phủ bàn phím
-323|Phụ kiện chơi game
-140|Thiết bị định vị, phụ kiện
-83|Ống kính tele
-148|Ổ cắm, bóng đèn thông minh
-279|Hộp đựng đồ đa năng
-271|Máy pha cà phê
-306|Máy ảnh
-307|Phụ kiện máy ảnh
-303|Tủ chống ẩm
-304|Bồn nước
-101|Máy xay thịt
-60|Túi đựng phụ kiện
-47|Dịch vụ vệ sinh, bảo dưỡng
-126|Phụ kiện ốp lưng
-99|Nồi áp suất
-156|Khóa điện tử
-115|Máy giặt
-285|Dụng cụ mài dao
-39|Máy rửa chén
-283|Thớt
-177|Máy rửa mặt
-40|Tủ đông, tủ mát
-166|Robot hút bụi
-184|Bồn ngâm chân
-183|Máy tăm nước
-49|Đồng hồ thông minh
-171|Thiết bị sưởi ấm khác
-261|Máy tiệt trùng
-313|Đồ dùng cho bé
-238|Kìm
-241|Dụng cụ cân, đo
-168|Bếp hồng ngoại
-167|Bếp từ
-232|Ổ Khoá
-297|Đèn thông minh
-97|Máy xay sinh tố
-215|Máy vắt cam
-256|Khung treo Tivi
-182|Bàn chải điện
-317|Bóng đèn led
-199|Quạt điều hoà
-198|Quạt
-69|Quạt mini
-200|Quạt trần
-28|Laptop
-117|Tủ sấy quần áo
-164|Phụ kiện lọc khí
-98|Máy ép trái cây
-162|Máy lọc không khí
-187|Máy tạo ẩm
-163|Máy hút ẩm
-194|Ghế massage
-275|Tô, chén, dĩa
-149|Pin tiểu
-120|Cáp sạc
-157|Máy lọc nước
-158|Lõi máy lọc nước
-160|Cốc lọc nước đầu nguồn
-161|Lọc nước không điện
-321|Lọc tổng đầu nguồn
-141|Giá đỡ điện thoại, máy tính bảng, laptop
-319|Máy đọc sách
-208|Bình, ly giữ nhiệt
-203|Vá, sạn
-68|Mắt kính
-58|Phụ kiện tablet
-79|Bộ lưu điện
-178|Máy massage cá nhân
-137|Micro thu âm điện thoại
-64|Thẻ nhớ
-135|Bàn phím
-30|Máy tính bảng
-318|Bảng vẽ tự xoá
-151|Máy tạo tiếng ồn trắng
-147|Máy chiếu
-326|Cảm biến thông minh
-65|USB
-63|Ổ cứng di động
-322|Bảng treo đồ Pegboard
-123|Ốp lưng đ.thoại
-96|Cây nước nóng lạnh
-102|Lẩu điện
-100|Nồi nấu chậm
-274|Máy xay cà phê
-276|Hộp đựng thực phẩm
-282|Dao
-284|Kéo
-127|Camera giám sát
-129|Camera hành trình / hành động
-128|Gậy chụp ảnh, Gimbal
-130|Flycam
-331|Đầu ghi camera
-212|Bình đựng nước
-134|Chuột máy tính
-136|Miếng lót chuột
-142|Túi đựng AirPods
-119|Adapter sạc
-121|Hub, cáp chuyển đổi
-329|Ghế chỉnh dáng ngồi
-268|Máy làm sữa chua
-267|Máy làm đá
-333|Ghế gaming, ghế công thái học
-44|Vali kéo
-122|Ốp lưng tablet
-330|Robot thông minh
-312|Đồ dùng khác
-180|Mặt nạ chăm sóc da
-207|Bộ lau nhà
-205|Nồi
-206|Chảo
-280|Thau, rổ, gáo nước
-211|Mũ bảo hiểm
-210|Muỗng, đũa
-213|Khay đá - ly làm đá
-216|Dụng cụ vắt cam
-223|Bàn chải - Cọ toilet
-222|Miếng rửa chén, cọ chùi
-311|Thùng rác
-293|Túi đựng rác
-278|Hộp đựng giấy
-186|Máy xông hơi mặt
-193|Xe đạp tập thể dục tại nhà
-179|Máy triệt lông
-185|Cân sức khoẻ
-226|Bộ dụng cụ đa năng
-104|Bình đun siêu tốc
-236|Mũi khoan
-255|Giá đỡ máy giặt, máy lọc nước, chân loa
-174|Máy cạo râu
-257|Điều khiển Tivi
-251|Vợt muỗi
-253|Ổ cắm - Phích cắm
-224|Máy khoan, vặn vít
-250|Cọ quét sơn
-244|Máy cưa, máy cắt
-172|Máy sấy tóc
-269|Máy làm sữa hạt
-170|Quạt sưởi
-169|Đèn sưởi
-86|Nồi cơm điện
-324|Phụ kiện hút bụi
-165|Máy hút bụi
-41|Máy nước nóng
-72|Máy tính để bàn
-57|Dây đồng hồ
-80|Bảng vẽ điện tử
-77|Giá treo màn hình
-139|Micro karaoke
-51|Sạc dự phòng
-75|Máy in
-221|Máy cắt lông xù quần áo
-103|Lò vi sóng
-125|Miếng dán camera
-124|Miếng dán
-116|Máy sấy quần áo
-218|Khay - kệ đựng đồ
-93|Bàn ủi
-114|Siêu sắc thuốc
-106|Máy hút mùi
-59|Balo, túi chống sốc
-105|Bình thủy điện
-46|Xe đạp
-132|Loa
-309|Phụ kiện vệ sinh điện tử
-91|Bếp ga
-133|Tai nghe
-220|Móc kẹp quần áo
-201|Lò nướng
-176|Máy tỉa lông mũi
-181|Máy tạo kiểu tóc
-175|Tông đơ cắt tóc
-152|Đèn điện, đèn sạc
-202|Máy nhồi bột, đánh trứng
-316|Tủ trữ rượu vang
-301|Đèn năng lượng mặt trời
-38|Tủ lạnh
-87|Nồi chiên không dầu
-73|Màn hình máy tính
-36|Máy lạnh
-118|Máy sấy giày
-37|Tivi
-302|Thiết bị mã vạch
-71|Máy chơi game
-76|Mực in
-70|Phụ kiện ô tô
-66|Thiết bị mạng
-74|Phần mềm
-27|Điện thoại
-50|Đồng hồ thời trang"""
-CATEGORY_REGISTRY_V815 = [
-    {'id': line.split('|', 1)[0], 'name': line.split('|', 1)[1]}
-    for line in CATEGORY_REGISTRY_RAW.splitlines() if '|' in line
-]
+# B.4.1 — Danh mục ID nạp từ database PostgreSQL (schema mwg / bảng categories).
+# Không tự kết nối riêng khi import module; được khởi tạo từ bootstrap qua `init_category_registry()`.
+CATEGORY_REGISTRY_SOURCE = 'uninitialized'
+CATEGORY_REGISTRY_V815 = []
+CATEGORY_REGISTRY_RAW = ""
 CATEGORY_NAMES_BY_ID_V815 = defaultdict(list)
-for _entry in CATEGORY_REGISTRY_V815:
-    CATEGORY_NAMES_BY_ID_V815[_entry['id']].append(_entry['name'])
-CATEGORY_AMBIGUOUS_IDS_V815 = {
-    k:v for k,v in CATEGORY_NAMES_BY_ID_V815.items() if len(set(v))>1
-}
-print('Category registry:', len(CATEGORY_REGISTRY_V815), 'entries;',
-      len(CATEGORY_NAMES_BY_ID_V815), 'unique IDs;',
-      len(CATEGORY_AMBIGUOUS_IDS_V815),'ambiguous IDs')
+CATEGORY_AMBIGUOUS_IDS_V815 = {}
+
+
+def init_category_registry(categories: list[dict[str, str]], source: str = "PostgreSQL mwg.categories") -> None:
+    """Khởi tạo danh mục cho placement từ dữ liệu đã tải trong kết nối duy nhất của dự án."""
+    global CATEGORY_REGISTRY_V815, CATEGORY_NAMES_BY_ID_V815, CATEGORY_AMBIGUOUS_IDS_V815, CATEGORY_REGISTRY_SOURCE, CATEGORY_REGISTRY_RAW
+    if not categories:
+        return
+    CATEGORY_REGISTRY_SOURCE = source
+    CATEGORY_REGISTRY_V815 = categories
+    CATEGORY_REGISTRY_RAW = "\n".join(f"{c['id']}|{c['name']}" for c in CATEGORY_REGISTRY_V815)
+    CATEGORY_NAMES_BY_ID_V815 = defaultdict(list)
+    for _entry in CATEGORY_REGISTRY_V815:
+        CATEGORY_NAMES_BY_ID_V815[_entry['id']].append(_entry['name'])
+    CATEGORY_AMBIGUOUS_IDS_V815 = {
+        k: v for k, v in CATEGORY_NAMES_BY_ID_V815.items() if len(set(v)) > 1
+    }
+    logger.info(
+        "Category registry initialized: %d entries; %d unique IDs; %d ambiguous IDs from %s",
+        len(CATEGORY_REGISTRY_V815),
+        len(CATEGORY_NAMES_BY_ID_V815),
+        len(CATEGORY_AMBIGUOUS_IDS_V815),
+        CATEGORY_REGISTRY_SOURCE,
+    )
+
+
+def _load_category_registry_from_db():
+    """Fallback chỉ dùng khi chạy placement standalone mà không qua bootstrap."""
+    try:
+        import psycopg2
+        from app.core.config import get_settings
+        settings = get_settings()
+        conn = psycopg2.connect(
+            host=settings.db_host,
+            port=settings.db_port,
+            dbname=settings.db_name,
+            user=settings.db_user,
+            password=settings.db_password,
+            connect_timeout=settings.db_connect_timeout_s,
+        )
+        try:
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT id, name FROM {settings.db_schema}.categories ORDER BY id")
+                rows = cur.fetchall()
+                if rows:
+                    return [{"id": str(r[0]).strip(), "name": str(r[1]).strip()} for r in rows if r[0] and r[1]]
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("Không thể đọc categories từ database: %s", exc)
+    return []
+
+
+def ensure_category_registry_loaded():
+    """Đảm bảo registry đã có dữ liệu (ưu tiên từ init_category_registry, fallback load DB nếu chạy lẻ)."""
+    global CATEGORY_REGISTRY_V815
+    if not CATEGORY_REGISTRY_V815:
+        cats = _load_category_registry_from_db()
+        if cats:
+            init_category_registry(cats)
 
 # ===== CELL 19 =====
 # B.4.2 — Resolver ID + group_name + tên SKU => Placement Group + product_type.
@@ -727,24 +343,15 @@ CATEGORY_TO_PLACEMENT_V815 = {
     'bon ngam chan':'Bồn ngâm chân',
 }
 # product_type là chuỗi phía API xóa nền; chỉnh tại đây nếu backend dùng enum khác.
-# Đây KHÔNG phải field có sẵn trong categories.json (file đó chỉ có id/name).
-REMOVE_BG_TYPE_BY_PLACEMENT_V815 = {
-    'TV':'tv', 'Máy điều hòa':'air_conditioner',
-    'Máy lọc không khí':'air_purifier',
-    'Ghế massage':'massage_chair',
-    'Loa':'speaker','Loa karaoke':'karaoke_speaker',
-    'Quạt điện':'fan','Quạt trần':'ceiling_fan',
-    'Quạt điều hòa':'air_cooler','Robot hút bụi':'robot_vacuum',
-    'Máy hút bụi':'vacuum_cleaner',
-    'Thảm trải sàn':'rug','Tivi box & Đầu thu kỹ thuật số':'tv_box',
-    'Máy chiếu':'projector','Máy chơi game':'game_console',
-    'Bồn ngâm chân':'foot_bath',
-}
+# V8.28: Không có tham số product_type cho remove-background.
+# Category->placement dùng để bảo đảm bề mặt đặt sản phẩm hợp lệ.
 
 def v815_normalize_category_name(text):
     return CATEGORY_NAME_ALIASES_V815.get(_fold_vi(text),_fold_vi(text))
 
 def v815_resolve_category(category_id,group_name,product=None):
+    if not CATEGORY_NAMES_BY_ID_V815:
+        ensure_category_registry_loaded()
     raw_id=str(category_id or '').strip()
     raw_name=str(group_name or '').strip()
     names=CATEGORY_NAMES_BY_ID_V815.get(raw_id,[])
@@ -791,12 +398,11 @@ def v815_resolve_category(category_id,group_name,product=None):
         group=None  # màn chiếu không có surface như máy chiếu
     if norm=='quat mini':
         if not any(k in title for k in ('quat mini','quat ban','quat de ban')): group=None
-    product_type=REMOVE_BG_TYPE_BY_PLACEMENT_V815.get(group, 'auto')
-    status='matched' if group and product_type else 'unsupported_placement'
+    status='matched' if group else 'unsupported_placement'
     return {'status':status,'category_id':raw_id,'api_group_name':raw_name,
         'official_category_name':official,'match_method':resolution,
         'id_has_collision':len(set(names))>1,
-        'placement_group':group,'product_type':product_type,
+        'placement_group':group,
         'renderable':status=='matched',
         'reason':'' if status=='matched' else 'Chưa có rule Placement an toàn cho category/SKU này.'}
 
@@ -820,28 +426,9 @@ def parse_and_random_select_api_response(payload,top_k=None,seed=None):
         # Không suy đoán category mới từ tên; stage2_render sẽ bỏ qua nhóm chưa map.
     return parsed
 
-# Wrapper: product_type ưu tiên từ response API nếu có, sau đó theo mapping đã xác minh.
-_v814_resolve_remove_bg = resolve_remove_bg_product_type
+# V8.28: Không dùng product_type cho remove-background
 def resolve_remove_bg_product_type(reco,product):
-    mapping=reco.get('category_mapping') or {}
-    if not mapping.get('renderable'):
-        return ''
-    explicit=str(product.get('product_type') or product.get('subcategory') or '').strip()
-    inferred=explicit or str(REMOVE_BG_TYPE_BY_PLACEMENT_V815.get(
-        mapping.get('placement_group'),'')).strip()
-    overrides=globals().get('API_PRODUCT_TYPE_OVERRIDES',{})
-    if not isinstance(overrides, dict):
-        raise TypeError('API_PRODUCT_TYPE_OVERRIDES phải là dict')
-    # ID riêng lẻ có thể trùng trong categories.json; ưu tiên ID + tên nhóm.
-    keys=(f"{reco.get('category_id','')}:{reco.get('group_name','')}",
-          str(reco.get('category_id','')), mapping.get('placement_group',''), inferred)
-    for key in keys:
-        if key in overrides:
-            value=str(overrides[key]).strip()
-            if not value:
-                raise ValueError(f'product_type override rỗng cho {key!r}')
-            return value
-    return inferred
+    return ''
 
 print('B.4.2: chỉ chọn category khớp ID+name và có rule đặt vật thể.')
 
@@ -2027,122 +1614,378 @@ def api_product_placement_restriction(group,product):
     return None
 
 # ===== CELL 73 =====
-# ===== Cell 10c.3: MASK2FORMER =====
+# D.3.0 — RF-DETR Medium pretrained COCO + Grounding DINO Base -> SAM 2 Hiera Small (Apache-2.0).
+import re
 import numpy as np
 import torch
 from PIL import Image
 
-SEGMENTATION_MODEL_ID = 'facebook/mask2former-swin-small-ade-semantic'
-_SEG_CACHE = {}
-SEGMENTATION_SURFACE_LABELS = {
-    'floor': 'floor', 'flooring': 'floor',
-    'wall': 'wall', 'ceiling': 'ceiling',
-    'table': 'table', 'desk': 'table',
-    'countertop': 'table', 'counter': 'table',
-}
-
-
-# These are NOT valid placement supports. They provide semantic exclusion masks
-# for windows, doors, stairs, fireplaces, and hanging/standing lamps.
-SEGMENTATION_OBSTACLE_LABELS = {
-    'window': 'window', 'windowpane': 'window',
-    'door': 'door', 'screen door': 'door',
-    'stairway': 'stairs', 'stairs': 'stairs', 'staircase': 'stairs',
-    'fireplace': 'fireplace',
-    'lamp': 'light_fixture', 'light': 'light_fixture',
-    'chandelier': 'light_fixture',
-}
-
-
 def extract_api_spatial_detections(objects, image_size):
-    """Chỉ nhận bbox thực sự xuất hiện trong JSON API. Không bịa tọa độ từ label/confidence.
-
-    Hỗ trợ bbox=[x1,y1,x2,y2] (pixel). Nếu API chỉ trả label/confidence,
-    sẽ trả [] và placement vẫn chạy với mask Mask2Former.
-    """
-    W,H=image_size
-    found=[]
+    """Chỉ nhận bbox thực sự xuất hiện trong JSON API. Không bịa tọa độ từ label/confidence."""
+    W, H = image_size
+    found = []
     for obj in objects or []:
-        if not isinstance(obj,dict): continue
-        raw=obj.get('bbox_xyxy',obj.get('bbox'))
-        if isinstance(raw,dict): raw=[raw.get(k) for k in ('x1','y1','x2','y2')]
-        if not isinstance(raw,(list,tuple)) or len(raw)!=4:continue
+        if not isinstance(obj, dict):
+            continue
+        raw = obj.get('bbox_xyxy', obj.get('bbox'))
+        if isinstance(raw, dict):
+            raw = [raw.get(k) for k in ('x1', 'y1', 'x2', 'y2')]
+        if not isinstance(raw, (list, tuple)) or len(raw) != 4:
+            continue
         try:
-            x1,y1,x2,y2=map(float,raw)
-        except (TypeError,ValueError):continue
-        if not all(np.isfinite([x1,y1,x2,y2])):continue
-        if 0<=x1<x2<=W and 0<=y1<y2<=H and x2-x1>=2 and y2-y1>=2:
-            found.append({'label':str(obj.get('label','Object')),
-                          'confidence':float(obj.get('confidence',0.0)),
-                          'bbox':[x1,y1,x2,y2]})
+            x1, y1, x2, y2 = map(float, raw)
+        except (TypeError, ValueError):
+            continue
+        if not all(np.isfinite([x1, y1, x2, y2])):
+            continue
+        if 0 <= x1 < x2 <= W and 0 <= y1 < y2 <= H and x2 - x1 >= 2 and y2 - y1 >= 2:
+            found.append({
+                'label': str(obj.get('label', 'Object')),
+                'confidence': float(obj.get('confidence', 0.0)),
+                'bbox': [x1, y1, x2, y2]
+            })
     return found
 
-# ===== CELL 75 =====
-def segment_room_surfaces(img, model_id=SEGMENTATION_MODEL_ID, device_name=None):
-    """Run Mask2Former ADE20K, return ({surface: bool_mask(H,W)}, metadata).
+def _rf_bbox_iou(a, b):
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    inter = max(0.0, min(ax2, bx2) - max(ax1, bx1)) * max(0.0, min(ay2, by2) - max(ay1, by1))
+    da = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    db = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    return inter / (da + db - inter + 1e-9)
 
-    No SegFormer fallback or fabricated surface masks when inference fails.
+class TransformersSAM2Predictor:
+    """Predictor wrapper for SAM 2 using Hugging Face transformers."""
+    def __init__(self, model_id, device='cpu'):
+        from transformers import Sam2Processor, Sam2Model
+        self.device = device
+        self.processor = Sam2Processor.from_pretrained(model_id)
+        self.model = Sam2Model.from_pretrained(model_id).to(device).eval()
+        self._image = None
+
+    def set_image(self, image):
+        if not isinstance(image, Image.Image):
+            image = Image.fromarray(np.asarray(image)).convert('RGB')
+        else:
+            image = image.convert('RGB')
+        self._image = image
+
+    def predict(self, box, multimask_output=True):
+        if self._image is None:
+            raise RuntimeError('Chưa gọi set_image trước khi predict')
+        x1, y1, x2, y2 = map(float, box)
+        input_boxes = [[[x1, y1, x2, y2]]]
+        inputs = self.processor(images=self._image, input_boxes=input_boxes, return_tensors='pt')
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        with torch.inference_mode():
+            outputs = self.model(**inputs)
+        post_masks = self.processor.post_process_masks(outputs.pred_masks, inputs['original_sizes'])[0][0]
+        candidate_masks = (post_masks > 0).cpu().numpy()
+        scores = outputs.iou_scores[0, 0].cpu().numpy()
+        return candidate_masks, scores, None
+
+def _sam2_load_predictor(model_id, device):
+    local_sam2 = Path(__file__).resolve().parents[2] / "artifacts" / "sam2_small"
+    if local_sam2.is_dir():
+        model_id = str(local_sam2)
+    key = (model_id, device)
+    if key not in _SAM2_MODEL_CACHE:
+        try:
+            from sam2.sam2_image_predictor import SAM2ImagePredictor
+            _SAM2_MODEL_CACHE[key] = SAM2ImagePredictor.from_pretrained(model_id, device=device)
+        except (ImportError, Exception):
+            _SAM2_MODEL_CACHE[key] = TransformersSAM2Predictor(model_id, device=device)
+    return _SAM2_MODEL_CACHE[key]
+
+def _grounding_dino_load(model_id, device):
+    from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
+    local_dino = Path(__file__).resolve().parents[2] / "artifacts" / "grounding_dino_base"
+    if local_dino.is_dir():
+        model_id = str(local_dino)
+    if model_id not in _GROUNDING_DINO_CACHE:
+        processor = AutoProcessor.from_pretrained(model_id)
+        model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id)
+        model.eval()
+        _GROUNDING_DINO_CACHE[model_id] = (processor, model)
+    processor, model = _GROUNDING_DINO_CACHE[model_id]
+    model.to(device)
+    return processor, model
+
+def _grounding_dino_surface_label(text_label):
+    text = str(text_label or '').strip().casefold()
+    seen = [s for s in ('wall', 'floor', 'ceiling') if re.search(r'\b' + s + r's?\b', text)]
+    return seen[0] if len(seen) == 1 else None
+
+def locate_surface_boxes_grounding_dino(img, model_id=GROUNDING_DINO_MODEL_ID, device_name=None):
+    """Grounding DINO Base zero-shot -> surface boxes theo pixel của ảnh gốc.
+    Output: list of dict(surface, bbox, confidence, text_label).
     """
+    if not isinstance(img, Image.Image):
+        img = Image.fromarray(np.asarray(img)).convert('RGB')
+    else:
+        img = img.convert('RGB')
+    H, W = img.height, img.width
+    device_name = device_name or ('cuda' if torch.cuda.is_available() else 'cpu')
+    processor, model = _grounding_dino_load(model_id, device_name)
     try:
-        from transformers import AutoImageProcessor, Mask2FormerForUniversalSegmentation
+        batch = processor(images=img, text=GROUNDING_DINO_SURFACE_PROMPT, return_tensors='pt')
+        inputs = {k: (v.to(device_name) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
+        with torch.inference_mode():
+            output = model(**inputs)
+        rows = processor.post_process_grounded_object_detection(
+            output, input_ids=inputs.get('input_ids'),
+            threshold=float(GROUNDING_DINO_BOX_THRESHOLD),
+            text_threshold=float(GROUNDING_DINO_TEXT_THRESHOLD),
+            target_sizes=[(H, W)],
+        )
+        if len(rows) != 1:
+            raise RuntimeError('Grounding DINO phải trả về đúng 1 ảnh')
+        row = rows[0]
+        labels = row.get('text_labels', row.get('labels', []))
+        boxes = row['boxes']
+        scores = row['scores']
+        if not (len(boxes) == len(scores) == len(labels)):
+            raise RuntimeError('Grounding DINO trả box/score/label không đồng bộ')
+        found = []
+        for box, score, label in zip(boxes, scores, labels):
+            surface = _grounding_dino_surface_label(label)
+            if surface is None:
+                continue
+            raw = box.detach().cpu().numpy() if hasattr(box, 'detach') else np.asarray(box)
+            if raw.shape != (4,) or not np.isfinite(raw).all():
+                continue
+            x1, y1, x2, y2 = map(float, raw)
+            x1 = float(np.clip(x1, 0, W))
+            x2 = float(np.clip(x2, 0, W))
+            y1 = float(np.clip(y1, 0, H))
+            y2 = float(np.clip(y2, 0, H))
+            frac = max(0.0, x2 - x1) * max(0.0, y2 - y1) / float(W * H)
+            if not (GROUNDING_DINO_MIN_BOX_FRAC[surface] <= frac <= GROUNDING_DINO_MAX_BOX_FRAC[surface]):
+                continue
+            value = float(score.item() if hasattr(score, 'item') else score)
+            if not np.isfinite(value):
+                continue
+            found.append({
+                'surface': surface,
+                'bbox': [x1, y1, x2, y2],
+                'confidence': value,
+                'text_label': str(label),
+            })
+        found.sort(key=lambda d: d['confidence'], reverse=True)
+        counters = {k: 0 for k in ('wall', 'floor', 'ceiling')}
+        selected = []
+        for item in found:
+            surf = item['surface']
+            if counters[surf] >= GROUNDING_DINO_MAX_BOXES_PER_SURFACE:
+                continue
+            if any(d['surface'] == surf and _rf_bbox_iou(item['bbox'], d['bbox']) > 0.88 for d in selected):
+                continue
+            selected.append(item)
+            counters[surf] += 1
+            if len(selected) >= GROUNDING_DINO_MAX_TOTAL_BOXES:
+                break
+        return selected
+    finally:
+        if GROUNDING_DINO_OFFLOAD_TO_CPU and device_name.startswith('cuda'):
+            model.to('cpu')
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+def _sam2_candidate_score(surface, mask, iou):
+    """Giữ quy tắc đánh giá hình học của V8.24, không vẽ mask nhân tạo."""
+    H, W = mask.shape
+    area = int(mask.sum())
+    fr = area / float(H * W)
+    if fr < SAM_MIN_AREA[surface] or fr > SAM_MAX_AREA[surface]:
+        return None
+    if float(iou) < SAM_MASK_MIN_IOU:
+        return None
+    yy, xx = np.where(mask)
+    if not len(yy):
+        return None
+    cy = float(yy.mean()) / H
+    top = float(mask[:max(1, int(H * 0.22))].mean())
+    mid = float(mask[int(H * 0.25):max(int(H * 0.65), int(H * 0.25) + 1)].mean())
+    bot = float(mask[int(H * 0.78):].mean())
+    if surface == 'floor':
+        if cy < 0.60 or bot < 0.12 or top > 0.06:
+            return None
+        geometry = (bot - top) * 0.55 + min(fr, 0.40) * 0.30
+    elif surface == 'ceiling':
+        if cy > 0.43 or top < 0.09 or bot > 0.02:
+            return None
+        geometry = (top - bot) * 0.55 + min(fr, 0.30) * 0.30
+    elif surface == 'wall':
+        if cy < 0.12 or cy > 0.75 or mid < 0.08:
+            return None
+        if bot > 0.35 and top > 0.65:
+            return None
+        geometry = mid * 0.45 + min(fr, 0.55) * 0.25
+    else:
+        return None
+    return float(iou) * 0.55 + geometry
+
+def _sam2_obstacle_kind(label):
+    name = str(label or '').casefold().strip()
+    if name in ('window', 'door', 'stairs', 'staircase', 'fireplace'):
+        return 'stairs' if name.startswith('stair') else name
+    if name in ('lamp', 'chandelier', 'ceiling light', 'light fixture'):
+        return 'light_fixture'
+    return None
+
+def _sam2_predict_best_box_mask(predictor, bbox, im_shape, min_iou=0.45):
+    H, W = im_shape
+    box = np.asarray(bbox, dtype=np.float32)
+    if box.shape != (4,):
+        return None
+    x1, y1, x2, y2 = box.tolist()
+    if not (0 <= x1 < x2 <= W and 0 <= y1 < y2 <= H):
+        return None
+    candidate_masks, scores, _ = predictor.predict(box=box, multimask_output=True)
+    best = None
+    for raw, score in zip(np.asarray(candidate_masks), np.asarray(scores).reshape(-1)):
+        m = np.asarray(raw, dtype=bool)
+        if m.shape != (H, W) or float(score) < min_iou:
+            continue
+        if m.sum() > 1.9 * max(1.0, (x2 - x1) * (y2 - y1)):
+            continue
+        if best is None or float(score) > best[0]:
+            best = (float(score), m)
+    return best[1] if best else None
+
+def _grounded_surface_mask_candidates(predictor, box_record, im_shape):
+    H, W = im_shape
+    x1, y1, x2, y2 = map(float, box_record['bbox'])
+    prompt = np.asarray((x1, y1, x2, y2), dtype=np.float32)
+    raw_masks, qualities, _ = predictor.predict(box=prompt, multimask_output=True)
+    candidates = []
+    surface = box_record['surface']
+    for raw, quality in zip(np.asarray(raw_masks), np.asarray(qualities).reshape(-1)):
+        mask = np.asarray(raw, dtype=bool)
+        if mask.shape != (H, W) or not mask.any():
+            continue
+        ix1, ix2 = max(0, int(np.floor(x1))), min(W, int(np.ceil(x2)))
+        iy1, iy2 = max(0, int(np.floor(y1))), min(H, int(np.ceil(y2)))
+        inside = int(mask[iy1:iy2, ix1:ix2].sum())
+        if inside / max(1, int(mask.sum())) < 0.55:
+            continue
+        mask_score = _sam2_candidate_score(surface, mask, float(quality))
+        if mask_score is None:
+            continue
+        joint = float(mask_score) + 0.15 * float(box_record['confidence'])
+        candidates.append((joint, mask, box_record, float(quality)))
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[:1]
+
+# ===== CELL 75 =====
+def segment_room_surfaces(img, model_id=SEGMENTATION_MODEL_ID, device_name=None, detections=None):
+    """Grounding DINO ('wall. floor. ceiling.') -> SAM 2 Hiera Small box masks.
+    Kế thừa schema mask của V8.20/V8.28; không tạo mask khi DINO không có bbox.
+    """
+    global _GROUNDING_DINO_LAST_RESULT
+    try:
         if not isinstance(img, Image.Image):
             img = Image.fromarray(np.asarray(img)).convert('RGB')
         else:
             img = img.convert('RGB')
+        detections = list(detections or [])
+        H, W = img.height, img.width
         device_name = device_name or ('cuda' if torch.cuda.is_available() else 'cpu')
-        key = (model_id, device_name)
-        if key not in _SEG_CACHE:
-            processor = AutoImageProcessor.from_pretrained(model_id)
-            seg_model = Mask2FormerForUniversalSegmentation.from_pretrained(model_id)
-            seg_model = seg_model.to(device_name).eval()
-            _SEG_CACHE[key] = (processor, seg_model)
-        processor, seg_model = _SEG_CACHE[key]
-        inputs = processor(images=img, return_tensors='pt')
-        inputs = {k: v.to(device_name) for k, v in inputs.items()}
+        grounded = locate_surface_boxes_grounding_dino(img, device_name=device_name)
+        _GROUNDING_DINO_LAST_RESULT = {'detections': grounded, 'status': 'ok'}
+        if not grounded:
+            return {}, {'status': 'unavailable', 'backend': 'grounding_dino_base_to_sam2_hiera_small',
+                        'reason': 'Grounding DINO không phát hiện wall/floor/ceiling đáng tin cậy',
+                        'prompt': GROUNDING_DINO_SURFACE_PROMPT, 'grounding_dino_boxes': []}
+        predictor = _sam2_load_predictor(model_id, device_name)
         with torch.inference_mode():
-            outputs = seg_model(**inputs)
-            semantic_map = processor.post_process_semantic_segmentation(
-                outputs, target_sizes=[(img.height, img.width)])[0]
-        predicted = semantic_map.cpu().numpy()
-        masks = {s: np.zeros((img.height, img.width), dtype=bool)
-                 for s in ALLOWED_SURFACES}
-        # Some id2label values contain multiple ADE20K synonyms separated by commas.
-        for category_id, raw_label in seg_model.config.id2label.items():
-            names = [s.strip().casefold() for s in str(raw_label).split(',')]
-            for name in names:
-                surface = SEGMENTATION_SURFACE_LABELS.get(name)
-                if surface:
-                    masks[surface] |= predicted == int(category_id)
-        # Semantic obstacles: crucial when detector has no explicit Window/Door classes.
-        # All masks align to the ORIGINAL image pixels.
-        obstacles={s:np.zeros((img.height,img.width),dtype=bool)
-                   for s in sorted(set(SEGMENTATION_OBSTACLE_LABELS.values()))}
-        for category_id, raw_label in seg_model.config.id2label.items():
-            names = [s.strip().casefold() for s in str(raw_label).split(',')]
-            for name in names:
-                obstacle=SEGMENTATION_OBSTACLE_LABELS.get(name)
-                if obstacle is not None:
-                    obstacles[obstacle] |= predicted == int(category_id)
-        masks.update(obstacles)
+            predictor.set_image(np.asarray(img))
+            proposals = {s: [] for s in ('wall', 'floor', 'ceiling')}
+            for row in grounded:
+                proposals[row['surface']].extend(
+                    _grounded_surface_mask_candidates(predictor, row, (H, W))
+                )
+            for surface in proposals:
+                proposals[surface].sort(key=lambda item: item[0], reverse=True)
+            objects_mask = np.zeros((H, W), dtype=bool)
+            masks = {key: np.zeros((H, W), dtype=bool) for key in
+                     ('wall', 'floor', 'ceiling', 'table', 'window', 'door', 'stairs',
+                      'fireplace', 'light_fixture')}
+            masked_objects = 0
+            for obj in detections[:int(SAM_MAX_BOX_PROMPTS)] + list(SAM_MANUAL_OBSTACLES):
+                box = obj.get('bbox')
+                if not box:
+                    continue
+                m = _sam2_predict_best_box_mask(predictor, box, (H, W))
+                if m is None:
+                    continue
+                label = str(obj.get('coco_label') or obj.get('label') or '').casefold()
+                if label in ('dining table', 'table', 'desk'):
+                    masks['table'] |= m
+                else:
+                    objects_mask |= m
+                obstacle = _sam2_obstacle_kind(obj.get('label'))
+                if obstacle:
+                    masks[obstacle] |= m
+                masked_objects += 1
+        chosen = {}
+        assigned = np.zeros((H, W), dtype=bool)
+        for surface in ('floor', 'ceiling', 'wall'):
+            for score, mask, box_record, quality in proposals[surface]:
+                available = mask & ~assigned & ~masks[surface] & ~objects_mask
+                if int(available.sum()) < max(8, int(SAM_MIN_AREA[surface] * W * H * 0.60)):
+                    continue
+                if surface != 'wall' and masks[surface].any():
+                    continue
+                masks[surface] |= available
+                chosen.setdefault(surface, []).append({
+                    'grounding_box_px': box_record['bbox'],
+                    'grounding_confidence': round(float(box_record['confidence']), 3),
+                    'sam_predicted_iou': round(float(quality), 3),
+                    'area_pixels': int(available.sum()),
+                    'selection_score': round(float(score), 3),
+                })
+            assigned |= masks[surface]
+        masks['wall'] &= ~objects_mask
+        for obs in ('window', 'door', 'stairs', 'fireplace', 'light_fixture'):
+            masks['wall'] &= ~masks[obs]
         counts = {s: int(m.sum()) for s, m in masks.items()}
-        return masks, {
-            'status': 'ok', 'backend': 'mask2former_ade20k',
-            'model_id': model_id, 'device': device_name,
+        has_surface = any(counts[k] >= SAM_MIN_AREA[k] * W * H * 0.60 for k in ('wall', 'floor'))
+        meta = {
+            'status': 'ok' if has_surface else 'unavailable',
+            'backend': 'grounding_dino_base_to_sam2_hiera_small',
+            'grounding_dino_model_id': GROUNDING_DINO_MODEL_ID,
+            'sam2_model_id': model_id, 'device': device_name,
+            'prompt': GROUNDING_DINO_SURFACE_PROMPT,
+            'grounding_dino_boxes': grounded,
+            'grounding_dino_counts': {s: sum(x['surface'] == s for x in grounded)
+                                     for s in ('wall', 'floor', 'ceiling')},
             'pixels_per_surface': counts,
+            'surface_box_mask_evidence': chosen,
+            'rf_detr_bboxes_used': len(detections),
+            'sam_box_masks_accepted': masked_objects,
+            'semantic_labels_available': False,
+            'notice': 'Prompt zero-shot chỉ là dự đoán. Surface mask cần được QA trên ảnh thực tế.'
         }
+        if not has_surface:
+            meta['reason'] = 'Grounding DINO + SAM 2 không tạo đủ mask wall/floor hợp lệ'
+        return masks, meta
     except Exception as exc:
-        return {}, {'status': 'unavailable', 'backend': 'mask2former_ade20k',
-                    'model_id': model_id,
-                    'reason': f'{type(exc).__name__}: {exc}'}
+        _GROUNDING_DINO_LAST_RESULT = {'detections': [], 'status': 'error', 'reason': str(exc)}
+        return {}, {
+            'status': 'unavailable',
+            'backend': 'grounding_dino_base_to_sam2_hiera_small',
+            'reason': f'{type(exc).__name__}: {exc}',
+        }
 
 
 # ===== 10c.3 v4: OPTIONAL RELATIVE DEPTH (NOT METRIC) =====
-DEPTH_MODEL_ID='depth-anything/Depth-Anything-V2-Small-hf'
+DEPTH_MODEL_ID = str(_LOCAL_DEPTH_DIR) if _LOCAL_DEPTH_DIR.is_dir() else 'depth-anything/Depth-Anything-V2-Small-hf'
 _DEPTH_CACHE={}
 
 # ===== CELL 77 =====
 # ===== D.3.1: Tu mask WALL chung -> cac MAT TUONG rieng =====
-# Khong suy dien la mot mat tuong lien tuc chi vi Mask2Former tra label 'wall'.
+# Khong suy dien la mot mat tuong lien tuc chi vi SAM 2 tra label 'wall'.
 # Xac dinh duong giao bang hinh hoc duong tran-tuong va tuong-san.
 from scipy.ndimage import median_filter
 
@@ -2298,13 +2141,14 @@ def infer_wall_plane_masks(image,masks,policy=None):
 
 _segment_room_surfaces_pre_wall_planes = segment_room_surfaces
 
-def segment_room_surfaces(img, model_id=SEGMENTATION_MODEL_ID, device_name=None):
-    masks,meta=_segment_room_surfaces_pre_wall_planes(img,model_id,device_name)
-    if meta.get('status')!='ok':return masks,meta
-    plane_masks,plane_meta=infer_wall_plane_masks(img,masks)
+def segment_room_surfaces(img, model_id=SEGMENTATION_MODEL_ID, device_name=None, detections=None):
+    masks, meta = _segment_room_surfaces_pre_wall_planes(img, model_id, device_name, detections=detections)
+    if meta.get('status') != 'ok':
+        return masks, meta
+    plane_masks, plane_meta = infer_wall_plane_masks(img, masks)
     masks.update(plane_masks)
-    meta['wall_planes']=plane_meta
-    return masks,meta
+    meta['wall_planes'] = plane_meta
+    return masks, meta
 
 
 def display_wall_planes_debug(image,masks,output_path=None):
@@ -2325,7 +2169,7 @@ def display_wall_planes_debug(image,masks,output_path=None):
     return img
 
 # ===== CELL 79 =====
-# D.3.2 — V8.7: Vertical wall-junction evidence from RGB + Mask2Former.
+# D.3.2 — V8.7: Vertical wall-junction evidence from RGB + SAM 2.
 # Runs AFTER semantic wall segmentation; does not change RT-DETR, recommendation,
 # depth scaling, no-ceiling floor reference, or STRICT no-fallback background API.
 import cv2
@@ -2357,7 +2201,7 @@ _infer_wall_plane_masks_before_v87 = infer_wall_plane_masks
 def _v87_detect_visual_corner(image, masks, side, cfg=None):
     """Return visual wall-to-wall seam only with vertical-edge AND wall evidence.
 
-    Door/window edges are discouraged by requiring Mask2Former wall pixels on
+    Door/window edges are discouraged by requiring SAM 2 wall pixels on
     both sides of the line and continuity on the candidate front-wall side.
     If ambiguous/weak, return None. Never guess a corner from color alone.
     """
@@ -3295,7 +3139,7 @@ def _choose_placement_region_fixed(profile, masks, detections, image_size,
         return _unavailable_placement('unsupported_product', 'Thieu metadata surface')
     if surface not in masks and surface != 'table':
         return _unavailable_placement('segmentation_unavailable',
-                                      'Khong co mask tu Mask2Former', surface)
+                                      'Khong co mask tu SAM 2', surface)
     raw = np.asarray(masks.get(surface,np.zeros((H,W),dtype=bool)), dtype=bool)
     inferred_support=np.zeros((H,W),dtype=bool)
     if surface=='table':
@@ -3543,7 +3387,7 @@ def _choose_placement_region_fixed(profile, masks, detections, image_size,
                          'ceiling_gap_px':round(float(native_gap[0]*H),1),
                          'ceiling_gap_image_ratio':round(float(native_gap[0]),4),
                          'ceiling_column_coverage':round(float(native_coverage[0]),3),
-                         'source':'Mask2Former ceiling boundary',
+                         'source':'SAM 2 ceiling boundary',
                          'verified':False}
         # Native pixel validation: don't trust a relation found only after downsampling.
         final_bonus,final_valid,final_matches,final_missing=spatial_relation_candidates(
@@ -3570,8 +3414,8 @@ def _choose_placement_region_fixed(profile, masks, detections, image_size,
             'surface_position': (relation['surface_position'] if relation else None),
             'surface_relation': (relation['surface_relation'] if relation else None),
             'surface_mask_pixels': int(raw.sum()),
-            'surface_support_source': ('mask2former+YOLO_inferred_shelf_top' if inferred_support.any()
-                                       else 'mask2former'),
+            'surface_support_source': ('sam2+inferred_shelf_top' if inferred_support.any()
+                                       else 'sam2'),
             'spatial_relationships':final_matches,
             'ceiling_relation':ac_relation,
             'no_overlap_with_detected_objects':True,
@@ -3602,7 +3446,7 @@ def _attach_failure_context(placement, group, profile, masks):
         elif status=='surface_not_allowed':
             placement['relative_to_surface'] = CEILING_REJECT_REASON
         elif status=='no_surface_detected':
-            placement['relative_to_surface'] = f'Mask2Former không tìm thấy {sn}'
+            placement['relative_to_surface'] = f'SAM 2 không tìm thấy {sn}'
         elif status=='unsupported_product':
             placement['relative_to_surface'] = 'Chưa có metadata surface cho sản phẩm'
         else:
@@ -4221,7 +4065,7 @@ def choose_placement_region(profile,masks,detections,image_size,
                 return _unavailable_placement('no_floor_boundary',
                         'Thiếu mask sàn; không thể định vị chiều cao TV theo sàn','wall')
             # Ceiling is OPTIONAL: D.5.6 uses the visible front-wall top + floor seam
-            # when Mask2Former sees no ceiling. Never invent a ceiling mask.
+            # when SAM 2 sees no ceiling. Never invent a ceiling mask.
         local_profile=deepcopy(profile)
         local_profile['_wall_depth_mask']=raw_wall
         try:
@@ -4574,7 +4418,7 @@ AIRCON_WALL_CLEARANCE_V84 = {
 def _v84_wall_ceiling_floor_edges(masks, image_size, x):
     """Use the actual *front-wall segment* (its top/bottom) in one column.
 
-    Mask2Former must provide wall, ceiling, floor. The wall segment supplies
+    SAM 2 must provide wall, ceiling, floor. The wall segment supplies
     local ceiling-wall and wall-floor seams; no image-global y thresholds.
     """
     W,H=map(int,image_size)
@@ -4622,7 +4466,7 @@ def _v84_aircon_wall_clearance(masks,image_size,bbox):
         'top_gap_wall_fraction':round(float(gap_top),4),
         'bottom_gap_wall_fraction':round(float(gap_bottom),4),
         'top_gap_px':int(y1-top),'bottom_gap_px':int(bottom-y2),
-        'source':'Mask2Former/front_wall_plane_top_bottom',
+        'source':'SAM 2/front_wall_plane_top_bottom',
         'measurement_verified':False,
     }
 
@@ -5047,7 +4891,7 @@ def validate_aircon_api_silhouette(planned_bbox,rendered_bbox,image_size):
 
 # ===== CELL 147 =====
 # D.5.7 — V8.11: CHỈ TV - Wall-first placement (independent of AC)
-# Mục tiêu: chọn mặt tường trước, rồi mới tính bbox. Mask2Former chỉ cung cấp
+# Mục tiêu: chọn mặt tường trước, rồi mới tính bbox. SAM 2 chỉ cung cấp
 # semantic "wall", không cung cấp instance tường. Các mặt tường ở đây là ước lượng
 # từ mask + đường giao RGB/geometry, KHÔNG khẳng định đã đo 3D chính xác.
 from collections import Counter
@@ -5142,7 +4986,7 @@ def v811_prepare_tv_planes(image, masks):
             inner=np.zeros((H,W),bool)
             if right>left:inner[:,left:right]=True
             planes['tv_plane_front']=cleaned & inner
-    # Loại trừ cửa sổ/cửa/cầu thang khỏi nơi đặt TV, kể cả khi Mask2Former
+    # Loại trừ cửa sổ/cửa/cầu thang khỏi nơi đặt TV, kể cả khi SAM 2
     # xếp nhầm cửa sổ vào mask WALL.
     obstacles=np.zeros((H,W),bool)
     for name in ('window','door','stairs','fireplace','light_fixture'):
@@ -6072,7 +5916,7 @@ def stage1_recommend(source=IMAGE_INPUT, random_seed=RECOMMEND_RANDOM_SEED,
         if detected:display(pd.DataFrame(detected))
         if detected and not parsed['spatial_detections']:
             print('API không trả bbox; không thể chặn vật thể đã phát hiện bằng bbox. '
-                  'Spatial Placement vẫn sử dụng Mask2Former và các vùng cấm.')
+                  'Spatial Placement vẫn sử dụng SAM 2 và các vùng cấm.')
         print('API recommend:',len(rows),'category có SKU; random 1 SKU/category')
         if rows:
             display(parsed['recommendation_table'])
@@ -6089,38 +5933,40 @@ from io import BytesIO
 from datetime import datetime, timezone
 from PIL import Image, ImageDraw
 
-# CHỈ điền ở đây sau khi đối chiếu /openapi.json hoặc thông báo 422 của backend.
-# Key có thể là '<category_id>:<group_name>', category_id, placement_group,
-# hoặc product_type cũ (theo thứ tự ưu tiên trong resolver ở B.4.2).
-# Mặc định theo curl của bạn: product_type đi trong multipart form.
-# Nếu OpenAPI hiện ghi in=query, đổi thành query; KHÔNG tự thử fallback.
-REMOVE_BG_PRODUCT_TYPE_LOCATION = os.environ.get('REMOVE_BG_PRODUCT_TYPE_LOCATION','form').strip().lower()
-if REMOVE_BG_PRODUCT_TYPE_LOCATION not in ('form','query'):
-    raise ValueError('REMOVE_BG_PRODUCT_TYPE_LOCATION phải là form hoặc query')
-API_PRODUCT_TYPE_OVERRIDES = {
-    # '38:Tivi': 'tv',
-    # 'Máy điều hòa': 'air_conditioner',
-}
+# V8.28: request tới remove-background chỉ chứa duy nhất file ảnh.
+# Multipart field name cố định: image. Không gửi product_type hoặc metadata.
 PRODUCT_IMAGE_DOMAINS = ('tgdd.vn','dienmayxanh.com','mwgshop.vn')
 MAX_PRODUCT_IMAGE_BYTES = 15*1024*1024
 MAX_API_PNG_BYTES = 25*1024*1024
 API_TIMEOUT = (10,120)
 print('Remove Background endpoint:', REMOVE_BG_API_URL)
 
+def _default_user_agent() -> str:
+    """Tự động sinh User-Agent chuẩn theo thiết bị và hệ điều hành của máy hiện tại."""
+    sys_name = platform.system()
+    machine = platform.machine()
+    if sys_name == "Darwin":
+        return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    elif sys_name == "Windows":
+        return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    else:
+        return f"Mozilla/5.0 (X11; Linux {machine}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
 # ===== CELL 156 =====
-# F.1b — KIỂM TRA SCHEMA BACKEND (chạy thủ công trên Colab nếu vẫn HTTP 422).
-# Không gọi API tách nền thử với sản phẩm khác, không đổi loại sản phẩm tự động.
+# F.1b — KIỂM TRA SCHEMA BACKEND (chạy thủ công nếu gặp HTTP 422).
+# Chỉ GET /openapi.json để xem tài liệu nếu backend báo HTTP 422; không thử gửi sản phẩm khác.
 def inspect_remove_bg_api_schema(verbose=True):
     endpoint = REMOVE_BG_API_URL or (f"{REMOVE_BG_BASE_URL.rstrip('/')}/api/v1/products/remove-background" if REMOVE_BG_BASE_URL else "")
     if not endpoint:
         if verbose: print('Thiếu REMOVE_BG_BASE_URL hoặc REMOVE_BG_API_URL trong cấu hình.')
         return {'status': 'unavailable', 'reason': 'missing endpoint'}
     url = endpoint.split('/api/v1/',1)[0] + '/openapi.json'
+    headers = {
+        'Accept': 'application/json',
+        'User-Agent': os.environ.get("REMOVE_BG_USER_AGENT", "").strip() or _default_user_agent(),
+    }
     try:
-        response = requests.get(url,timeout=(6,15),
-                                headers={'Accept':'application/json',
-                                         'ngrok-skip-browser-warning':'true'},
-                                allow_redirects=False)
+        response = requests.get(url, timeout=(6, 15), headers=headers, allow_redirects=False)
         if response.status_code != 200:
             raise RuntimeError(f'GET /openapi.json HTTP {response.status_code}: {response.text[:180]}')
         doc=response.json()
@@ -6146,7 +5992,7 @@ def inspect_remove_bg_api_schema(verbose=True):
         print('POST',REMOVE_BG_API_URL)
         print('parameters:',json.dumps(out['parameters'],ensure_ascii=False,indent=2)[:2800])
         print('form schemas:',json.dumps(fields,ensure_ascii=False,indent=2)[:3500])
-        print('Nếu product_type có enum khác, chỉnh API_PRODUCT_TYPE_OVERRIDES trong F.1.')
+        print('V8.28 chỉ gửi field multipart image. Nếu 422, đối chiếu tên field file trong schema.')
     return out
 
 # ===== CELL 157 =====
@@ -6211,10 +6057,13 @@ def format_api_validation_error(response):
         return '; '.join(parts)[:1600]
     return json.dumps(payload,ensure_ascii=False)[:1600]
 
-def require_api_cutout(source_bytes, filename, mime, product_type, api_url=None,
-                       product_id=None, product_name=None, group_name=None):
-    """Gọi API Remove Background để tách nền sản phẩm thành ảnh PNG RGBA.
+def require_api_cutout(source_bytes, filename, mime, api_url=None,
+                       product_id=None, product_name=None, group_name=None,
+                       user_agent=None, **kwargs):
+    """Gọi API Remove Background để tách nền sản phẩm thành ảnh PNG RGBA (V8.28: Image-Only).
 
+    Request chỉ gửi đúng 01 multipart field 'image'. Không gửi product_type, fields phụ,
+    query params hay JSON body.
     Ghi log chi tiết cả khi gọi thành công lẫn khi gặp lỗi. Không dùng fallback.
     """
     prod_label = f"[{product_id or 'N/A'} - {product_name or 'N/A'}]"
@@ -6223,19 +6072,11 @@ def require_api_cutout(source_bytes, filename, mime, product_type, api_url=None,
     api_url = (api_url or REMOVE_BG_API_URL or "").strip()
     if not api_url and REMOVE_BG_BASE_URL:
         _b = REMOVE_BG_BASE_URL.rstrip("/")
-        api_url = _b if "/api/v1/products/remove-background" in _b else f"{_b}/api/v1/products/remove-background"
+        api_url = _b if "/remove-background" in _b else f"{_b}/remove-background"
     if not api_url:
         err_msg = f"Thiếu endpoint Remove Background API cho sản phẩm {prod_label}. Vui lòng cấu hình REMOVE_BG_BASE_URL trong .env"
         logger.error("Gọi Remove Background API THẤT BẠI: %s", err_msg)
         raise ValueError(err_msg)
-
-    pt_norm = str(product_type or "").strip().lower()
-    if pt_norm in ("tv", "tivi"):
-        product_type = "tv"
-    elif pt_norm in ("air_conditioner", "may_lanh", "may lanh", "điều hòa", "dieu hoa"):
-        product_type = "air_conditioner"
-    else:
-        product_type = "auto"
 
     if mime not in ('image/jpeg', 'image/png', 'image/webp'):
         err_msg = f"MIME ảnh không hợp lệ: '{mime}' cho sản phẩm {prod_label}"
@@ -6247,46 +6088,67 @@ def require_api_cutout(source_bytes, filename, mime, product_type, api_url=None,
         logger.error("Gọi Remove Background API THẤT BẠI: %s", err_msg)
         raise ValueError(err_msg)
 
-    # Chọn đúng vị trí theo schema backend, không tự retry bằng phương thức khác.
-    product_type_location = REMOVE_BG_PRODUCT_TYPE_LOCATION
-    form_data = {'product_type': product_type} if product_type_location == 'form' else {}
-    query_params = {'product_type': product_type} if product_type_location == 'query' else {}
+    # Xác định User-Agent của thiết bị đang gọi (ưu tiên client user-agent nếu có)
+    env_ua = os.environ.get("REMOVE_BG_USER_AGENT", "").strip()
+    effective_ua = (user_agent or "").strip()
+    if not effective_ua or "python-requests" in effective_ua.lower():
+        effective_ua = env_ua or _default_user_agent()
+
+    headers = {
+        'Accept': 'image/png',
+        'User-Agent': effective_ua,
+    }
 
     logger.info(
-        "Bắt đầu gọi Remove Background API cho sản phẩm %s (nhóm: %s, product_type: %s, file: %s, dung lượng: %d bytes) tới endpoint: %s",
-        prod_label, group_label, product_type, filename, len(source_bytes), api_url,
+        "Bắt đầu gọi Remove Background API (V8.28 Image-Only) cho sản phẩm %s (nhóm: %s, file: %s, dung lượng: %d bytes, UA: %s) tới endpoint: %s",
+        prod_label, group_label, filename, len(source_bytes), effective_ua, api_url,
     )
 
     t0 = time.perf_counter()
-    try:
-        r = requests.post(
-            api_url,
-            files={'image': (filename, source_bytes, mime)},
-            data=form_data, params=query_params,
-            headers={'Accept': 'image/png', 'ngrok-skip-browser-warning': 'true'},
-            timeout=API_TIMEOUT, allow_redirects=False)
-    except requests.RequestException as exc:
-        elapsed = time.perf_counter() - t0
-        logger.error(
-            "Gọi Remove Background API THẤT BẠI (lỗi kết nối/timeout sau %.2fs) cho sản phẩm %s (nhóm: %s) tới %s: %s",
-            elapsed, prod_label, group_label, api_url, exc, exc_info=True,
-        )
-        raise RuntimeError(f'Không kết nối được Remove Background API ({api_url}) sau {elapsed:.2f}s: {exc}') from exc
+    r = None
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            # 'requests' tự tạo Content-Type multipart/form-data với boundary.
+            # V8.28: Chỉ gửi 1 file field 'image'; tuyệt đối không thêm trường nào khác.
+            r = requests.post(
+                api_url,
+                files={'image': (filename, source_bytes, mime)},
+                headers=headers,
+                timeout=API_TIMEOUT, allow_redirects=False)
+            break
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            if attempt < max_retries - 1:
+                time.sleep(0.5)
+                continue
+            elapsed = time.perf_counter() - t0
+            logger.error(
+                "Gọi Remove Background API THẤT BẠI (lỗi kết nối/timeout sau %.2fs) cho sản phẩm %s (nhóm: %s) tới %s: %s",
+                elapsed, prod_label, group_label, api_url, exc, exc_info=True,
+            )
+            raise RuntimeError(f'Không kết nối được Remove Background API ({api_url}) sau {elapsed:.2f}s: {exc}') from exc
+        except requests.RequestException as exc:
+            elapsed = time.perf_counter() - t0
+            logger.error(
+                "Gọi Remove Background API THẤT BẠI (lỗi request sau %.2fs) cho sản phẩm %s (nhóm: %s) tới %s: %s",
+                elapsed, prod_label, group_label, api_url, exc, exc_info=True,
+            )
+            raise RuntimeError(f'Không kết nối được Remove Background API ({api_url}) sau {elapsed:.2f}s: {exc}') from exc
 
     elapsed = time.perf_counter() - t0
 
     if r.status_code != 200:
         detail = format_api_validation_error(r)
         message = (f'Remove Background HTTP {r.status_code} sau {elapsed:.2f}s tại {api_url}; '
-                   f'sản phẩm={prod_label}, nhóm={group_label}, product_type={product_type!r}, '
-                   f'image={filename!r}, bytes={len(source_bytes)}, transport={product_type_location}; '
+                   f'sản phẩm={prod_label}, nhóm={group_label}, '
+                   f'image={filename!r}, bytes={len(source_bytes)}; '
                    f'API detail: {detail}')
         if r.status_code == 422:
-            message += (' | HTTP 422: kiểm tra loc=body.image, '
-                        'loc=body.product_type, enum product_type hoặc schema API.')
+            message += (' | HTTP 422: request chỉ gửi multipart file image; '
+                        'kiểm tra tên field và schema API qua inspect_remove_bg_api_schema().')
         logger.error(
-            "Gọi Remove Background API THẤT BẠI (HTTP %d sau %.2fs) cho sản phẩm %s (nhóm: %s, product_type: %s) tại %s | Detail: %s",
-            r.status_code, elapsed, prod_label, group_label, product_type, api_url, detail,
+            "Gọi Remove Background API THẤT BẠI (HTTP %d sau %.2fs) cho sản phẩm %s (nhóm: %s) tại %s | Detail: %s",
+            r.status_code, elapsed, prod_label, group_label, api_url, detail,
         )
         raise RuntimeError(message)
 
@@ -6324,9 +6186,9 @@ def require_api_cutout(source_bytes, filename, mime, product_type, api_url=None,
         raise ValueError('PNG API thiếu vùng sản phẩm rõ hoặc nền trong suốt')
 
     logger.info(
-        "Gọi Remove Background API THÀNH CÔNG cho sản phẩm %s (nhóm: %s, product_type: %s) tại %s trong %.2fs: "
+        "Gọi Remove Background API THÀNH CÔNG cho sản phẩm %s (nhóm: %s) tại %s trong %.2fs: "
         "nhận ảnh PNG RGBA (%dx%d, %d bytes, alpha channel hợp lệ)",
-        prod_label, group_label, product_type, api_url, elapsed, cutout.width, cutout.height, len(r.content),
+        prod_label, group_label, api_url, elapsed, cutout.width, cutout.height, len(r.content),
     )
     return cutout
 
@@ -6389,7 +6251,7 @@ def validate_tv_cutout_scale(planned_bbox, rendered_bbox, image_size):
             'rendered_aspect_ratio':round(aspect,3)}
 
 # ===== CELL 161 =====
-# F.4a — V8.8: PHOTOMETRIC MATCHING; chỉ xử lý cutout hợp lệ đã trả từ ngrok.
+# F.4a — V8.8: PHOTOMETRIC MATCHING; chỉ xử lý cutout hợp lệ đã trả từ API remove background.
 import numpy as np
 from PIL import Image, ImageDraw
 
@@ -6968,13 +6830,13 @@ def v89_validate_paired_render(group,rendered_bbox,placement,pair,committed):
 # ===== CELL 171 =====
 # F.5 — Duyệt đúng danh sách Gợi ý của BƯỚC 1; không thử SKU khác và không cache.
 # Chỉ đặt chỗ cho sản phẩm API xử lý THÀNH CÔNG (thất bại không giữ chỗ).
-def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True):
+def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True, user_agent=None):
     if 'recommendations' not in stage1_result or 'input_image' not in stage1_result:
         raise ValueError('Cần đầu ra stage1_recommend() từ BƯỚC 1')
     room=stage1_result['input_image'].convert('RGBA')
     job_dir=Path(output_base)/('render_'+datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')+'_'+uuid.uuid4().hex[:6])
     job_dir.mkdir(parents=True,exist_ok=False)
-    # Không được suy diễn mặt sàn/tường nếu Mask2Former không chạy được.
+    # Không được suy diễn mặt sàn/tường nếu SAM 2 không chạy được.
     try:
         masks,segmentation_info=segment_room_surfaces(room.convert('RGB'))
     except Exception as exc:
@@ -7032,7 +6894,7 @@ def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True):
         depth=None
         depth_info={'status':'unavailable','reason':f'{type(exc).__name__}: {exc}'}
     # V8.8: đo độ sáng ảnh phòng TRƯỚC ghép, chỉ chỉnh nhẹ ảnh render.
-    # Mask2Former, Depth và Placement vẫn xử lý ảnh gốc để giữ kết quả ổn định.
+    # SAM 2, Depth và Placement vẫn xử lý ảnh gốc để giữ kết quả ổn định.
     scene_render,scene_lighting = v88_analyze_room_and_prepare_render(room, job_dir)
     print('[V8.8] Độ sáng trung vị phòng:',round(scene_lighting['before']['median'],1),
           '| hệ số phơi sáng nền:',scene_lighting['room_exposure_gain'])
@@ -7052,7 +6914,6 @@ def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True):
              'product_id':product['product_id'],
              'product_name':product['product_name'],
              'image_url':product['image_url'],
-             'product_type':resolve_remove_bg_product_type(reco,product),
              'status':'not_rendered','reason':'',
              'category_mapping':reco.get('category_mapping',{})}
         results.append(rec)
@@ -7066,10 +6927,8 @@ def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True):
         if restriction:
             rec.update(status='unsupported_product_surface',reason=restriction)
             continue
-        if not rec['product_type']:
-            rec['product_type'] = 'auto'
         if segmentation_info.get('status')!='ok':
-            rec.update(status='no_placement',reason='Mask2Former không cung cấp surface masks')
+            rec.update(status='no_placement',reason='SAM 2 không cung cấp surface masks')
             continue
         # Trước tiên tính placement từ các vật thể đã phát hiện + những sản phẩm thực sự ghép.
         try:
@@ -7114,8 +6973,8 @@ def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True):
                 rec.update(status='missing_image_url',reason='SKU không có image_url')
                 continue
             source_bytes,source_name,mime=download_selected_product_image(product['image_url'])
-            # Bắt buộc gọi ngrok endpoint. Nếu lỗi => bắt exception => KHÔNG dán ảnh.
-            cutout=require_api_cutout(source_bytes,source_name,mime,rec['product_type'])
+            # Bắt buộc gọi remove-background API (V8.28 Image-Only). Nếu lỗi => bắt exception => KHÔNG dán ảnh.
+            cutout=require_api_cutout(source_bytes,source_name,mime,user_agent=user_agent)
             # V8.8: chỉ relight PNG đã xóa nền bằng API; giữ nguyên kênh alpha.
             # So ánh sáng quanh bbox với độ sáng của cùng bề mặt trong ảnh phòng.
             lit_cutout,lighting=v88_relight_api_cutout(
@@ -7253,7 +7112,6 @@ def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True):
         'mapping_status':r.get('category_mapping',{}).get('status'),
         'official_category_name':r.get('category_mapping',{}).get('official_category_name'),
         'placement_group':r.get('category_mapping',{}).get('placement_group'),
-        'product_type':r.get('product_type'),
         'render_status':r.get('status'), 'reason':r.get('reason'),
     } for r in results])
     mapping_audit.to_csv(job_dir/'category_mapping_audit.csv',index=False,encoding='utf-8-sig')
@@ -7263,6 +7121,7 @@ def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True):
             'recommend_response_source':stage1_result.get('api_response_source'),
             'selection_seed':stage1_result.get('selection_seed'),
             'endpoint':REMOVE_BG_API_URL,
+            'remove_background_request':'multipart image-only (V8.28)',
             'scene_lighting':scene_lighting,
             'lighting_policy_version':'V8.8',
             'tv_scale_policy_version':'V8.12',
@@ -7285,7 +7144,7 @@ def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True):
         selected_table.to_csv(job_dir/'recommend_selected_products.csv',index=False,encoding='utf-8-sig')
     df=pd.DataFrame(results)
     df.to_csv(job_dir/'render_results.csv',index=False,encoding='utf-8-sig')
-    print(f'BƯỚC 2: Đã ghép {len(success)}/{len(results)} sản phẩm bằng API ngrok.')
+    print(f'BƯỚC 2: Đã ghép {len(success)}/{len(results)} sản phẩm bằng API remove background.')
     if tv_ac_pair and all(g in committed_wall_pair for g in ('TV','Máy điều hòa')):
         aw=committed_wall_pair['Máy điều hòa']['rendered_bbox']
         tw=committed_wall_pair['TV']['rendered_bbox']
@@ -7294,7 +7153,7 @@ def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True):
               f'(tỷ lệ adaptive theo inch = {tv_ac_pair["adaptive_aircon_to_tv_ratio"]:.3f}; '
               'đã xét depth tương đối).')
     if len(df):
-        display(df[['rank','group_name','product_name','product_type','status','reason']])
+        display(df[['rank','group_name','product_name','status','reason']])
     else:
         print('Danh sách gợi ý rỗng; không gọi API và không tạo ảnh kết quả.')
     if show_final and combined_path is not None:
@@ -7312,6 +7171,7 @@ def render_room_recommendations(
     recommendations_result: dict,
     remove_bg_api_url: str | None = None,
     output_dir: Path | None = None,
+    user_agent: str | None = None,
 ) -> dict:
     """Run spatial placement and render for recommended products.
 
@@ -7322,7 +7182,7 @@ def render_room_recommendations(
     api_url = remove_bg_api_url or REMOVE_BG_API_URL
     if not api_url and REMOVE_BG_BASE_URL:
         _b = REMOVE_BG_BASE_URL.rstrip("/")
-        api_url = _b if "/api/v1/products/remove-background" in _b else f"{_b}/api/v1/products/remove-background"
+        api_url = _b if "/remove-background" in _b else f"{_b}/remove-background"
     room = room_image.convert("RGBA")
     W, H = room.size
 
@@ -7355,7 +7215,6 @@ def render_room_recommendations(
         # Category resolution
         resolved = v815_resolve_category(gcode, gname, prod)
         canonical = resolved.get("placement_group") or canonical_placement_group(gname, prod)
-        product_type = resolved.get("product_type") or resolve_remove_bg_product_type({"category_id": gcode, "placement_group": canonical}, prod)
 
         item = {k: v for k, v in grp.items() if k != "products"}
         item.update(
@@ -7363,7 +7222,6 @@ def render_room_recommendations(
             group_code=gcode,
             category_id=gcode,
             placement_group=canonical,
-            product_type=product_type,
             products=prods,
             selected_product=prod,
             category_mapping=resolved,
@@ -7445,7 +7303,6 @@ def render_room_recommendations(
             "category_id": entry.get("category_id"),
             "group_name": entry.get("group_name"),
             "placement_group": group,
-            "product_type": entry.get("product_type") or "auto",
             "product_id": prod_dict.get("product_id"),
             "product_name": prod_dict.get("product_name"),
             "price": prod_dict.get("price"),
@@ -7460,18 +7317,22 @@ def render_room_recommendations(
 
         verified_mapping = entry.get("category_mapping") or {}
         if not verified_mapping.get("renderable"):
-            current_rec.update(status="unmapped_category", reason=verified_mapping.get("reason", "Thiếu category mapping an toàn"))
+            reason = verified_mapping.get("reason", "Thiếu category mapping an toàn")
+            current_rec.update(status="unmapped_category", reason=reason)
+            logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): %s", prod_dict.get("product_id"), prod_dict.get("product_name"), group, reason)
             results.append(current_rec)
             continue
 
         restriction = api_product_placement_restriction(group, prod_dict)
         if restriction:
             current_rec.update(status="unsupported_product_surface", reason=restriction)
+            logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): %s", prod_dict.get("product_id"), prod_dict.get("product_name"), group, restriction)
             results.append(current_rec)
             continue
 
         if segmentation_info.get("status") != "ok":
-            current_rec.update(status="no_placement", reason="Mask2Former không cung cấp surface masks")
+            current_rec.update(status="no_placement", reason="SAM 2 không cung cấp surface masks")
+            logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): SAM 2 không cung cấp surface masks", prod_dict.get("product_id"), prod_dict.get("product_name"), group)
             results.append(current_rec)
             continue
 
@@ -7479,16 +7340,19 @@ def render_room_recommendations(
             profile = resolve_product_profile(group, prod_dict)
             if profile is None:
                 current_rec.update(status="no_placement", reason="Không có placement profile")
+                logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): Không có placement profile", prod_dict.get("product_id"), prod_dict.get("product_name"), group)
                 results.append(current_rec)
                 continue
 
             occupancy = spatial_detections + reserved
             placement = choose_placement_region(profile, masks, occupancy, room.size, depth_map=depth)
             if not placement.get("bbox_px"):
+                reason = f"{placement.get('status', 'no_safe_region')}: {placement.get('reason', '')}"
                 current_rec.update(
                     status="no_placement",
-                    reason=f"{placement.get('status', 'no_safe_region')}: {placement.get('reason', '')}",
+                    reason=reason,
                 )
+                logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): Không tìm được vị trí đặt an toàn (%s)", prod_dict.get("product_id"), prod_dict.get("product_name"), group, reason)
                 results.append(current_rec)
                 continue
 
@@ -7521,26 +7385,24 @@ def render_room_recommendations(
                     source_bytes,
                     source_name,
                     mime,
-                    current_rec["product_type"],
                     api_url=api_url,
                     product_id=prod_dict.get("product_id"),
                     product_name=prod_dict.get("product_name"),
                     group_name=group,
+                    user_agent=user_agent,
                 )
                 logger.info(
-                    "Tách nền THÀNH CÔNG cho sản phẩm [%s - %s] (nhóm: %s, product_type: %s) — tiếp tục xử lý relighting và compositing",
+                    "Tách nền THÀNH CÔNG cho sản phẩm [%s - %s] (nhóm: %s) — tiếp tục xử lý relighting và compositing",
                     prod_dict.get("product_id"),
                     prod_dict.get("product_name"),
                     group,
-                    current_rec["product_type"],
                 )
             except Exception as api_exc:
                 logger.error(
-                    "Tách nền THẤT BẠI cho sản phẩm [%s - %s] (nhóm: %s, product_type: %s): %s",
+                    "Tách nền THẤT BẠI cho sản phẩm [%s - %s] (nhóm: %s): %s",
                     prod_dict.get("product_id"),
                     prod_dict.get("product_name"),
                     group,
-                    current_rec["product_type"],
                     api_exc,
                 )
                 current_rec.update(status="cutout_error", reason=f"Không gọi được API tách nền: {api_exc}")
@@ -7585,6 +7447,10 @@ def render_room_recommendations(
 
     results.sort(key=lambda x: x["rank"])
     success = [x for x in results if x["status"] == "rendered"]
+    logger.info(
+        "Kết thúc render phòng: %d/%d sản phẩm được đặt thành công (gọi tách nền thành công %d lần)",
+        len(success), len(results), len(success)
+    )
 
     buf = BytesIO()
     canvas.convert("RGB").save(buf, format="PNG")

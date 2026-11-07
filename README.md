@@ -1,192 +1,226 @@
-# Gợi ý đồ điện máy từ ảnh phòng
+# Gợi ý và Phối cảnh Đồ điện máy từ Ảnh phòng (Recommend by Image v5.2)
 
-PostgreSQL 16 (catalog 1.413 sản phẩm) + FastAPI (RT-DETR + ma trận đồng xuất hiện).
+Hệ thống AI toàn diện: **Gợi ý sản phẩm điện máy (MWG / Điện Máy Xanh) theo không gian phòng** và **Tự động phối cảnh ghép sản phẩm 3D chân thực lên ảnh phòng** (Spatial Placement & Relighting Render).
 
-Ảnh phòng → detector RT-DETR → xếp hạng 62 nhóm sản phẩm → trả về sản phẩm kèm giá.
+Hệ sinh thái dịch vụ triển khai qua Docker:
+- **FastAPI Backend (Python 3.14 / PyTorch)**: Tích hợp RF-DETR, SAM 2, Grounding DINO, Depth Anything V2 và thuật toán tối ưu Noisy-OR.
+- **PostgreSQL 16**: Quản lý catalog 1.413 sản phẩm đồ điện máy thuộc schema `mwg` (categories, brand, product).
+- **Adminer**: Giao diện trực quan quản trị cơ sở dữ liệu.
 
-| Service  | URL                    | Credentials (từ `.env`)          |
-| -------- | ---------------------- | -------------------------------- |
-| API      | http://localhost:8000  | Swagger: `/docs`                 |
-| Postgres | `localhost:55432`      | `mwg` / `mwg_secret` / `mwgshop` |
-| Adminer  | http://localhost:58080 | server `postgres`, cùng creds    |
+---
 
-## Quick start
+## 📌 Bảng thông tin Dịch vụ
 
-```bash
-docker compose up -d --build     # postgres (tự nạp 1.413 sản phẩm) + api + adminer
-curl -s localhost:8000/health/ready | python3 -m json.tool
+| Dịch vụ | Địa chỉ truy cập | Thông tin đăng nhập / Ghi chú |
+| :--- | :--- | :--- |
+| **API Backend** | `http://localhost:8000` | Swagger UI: [`/docs`](http://localhost:8000/docs) · ReDoc: [`/redoc`](http://localhost:8000/redoc) · OpenAPI: [`/openapi.json`](http://localhost:8000/openapi.json) |
+| **PostgreSQL 16** | `localhost:55432` | User: `mwg` / Pass: `mwg_secret` / DB: `mwgshop` (schema `mwg`) |
+| **Adminer** | `http://localhost:58080` | System: `PostgreSQL` / Server: `postgres` / User: `mwg` / Pass: `mwg_secret` / DB: `mwgshop` |
+
+---
+
+## 🤖 Thông tin AI Models & Foundation Models
+
+Hệ thống kết hợp 4 mô hình AI thị giác máy tính tiên tiến nhất để thực hiện pipeline từ nhận diện không gian đến định vị và render:
+
+| Tên Model | Nhiệm vụ chính trong dự án | Kiến trúc / Model ID | Link Model | Giấy phép (License) |
+| :--- | :--- | :--- | :--- | :--- |
+| **RF-DETR Medium** | Phát hiện vật thể hiện hữu trong phòng (Sofa, TV, Giường, Tủ,...) để làm điều kiện tiên nghiệm cho ma trận đồng xuất hiện | `Roboflow/rf-detr-medium`<br>*(DINOv2 backbone)* | [Hugging Face](https://huggingface.co/Roboflow/rf-detr-medium) · [GitHub](https://github.com/roboflow/rf-detr) | **Apache-2.0** |
+| **SAM 2 Small**<br>*(Segment Anything 2)* | Phân đoạn chính xác mặt phẳng (tường, sàn, trần, mặt bàn) và tạo mặt nạ vật cản chi tiết cho thuật toán placement | `facebook/sam2-hiera-small`<br>*(Hiera-Small)* | [Hugging Face](https://huggingface.co/facebook/sam2-hiera-small) · [GitHub](https://github.com/facebookresearch/sam2) | **Apache-2.0** |
+| **Grounding DINO Base** | Zero-shot open-vocabulary detection để tìm các vùng bề mặt phòng (`wall`, `floor`, `ceiling`, `table`) làm prompt box cho SAM 2 | `IDEA-Research/grounding-dino-base` | [Hugging Face](https://huggingface.co/IDEA-Research/grounding-dino-base) · [GitHub](https://github.com/IDEA-Research/GroundingDINO) | **Apache-2.0** |
+| **Depth Anything V2 Small** | Ước lượng bản đồ chiều sâu đơn mục (Monocular Depth Estimation), xác định độ sâu tương đối, tỷ lệ phối cảnh và thứ tự che khuất | `depth-anything/Depth-Anything-V2-Small-hf` | [Hugging Face](https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf) · [GitHub](https://github.com/DepthAnything/Depth-Anything-V2) | **Apache-2.0** |
+
+> Ngoài ra, hệ thống tích hợp API tách nền chuẩn nội bộ (`REMOVE_BG_BASE_URL=https://ai.itmwg.vn/api/remove-background`) để trích xuất vật thể không nền từ catalog phục vụ ghép ảnh.
+
+---
+
+## 📜 Giấy phép bản quyền (Licenses)
+
+- **Mã nguồn Dự án**: Toàn bộ mã nguồn dự án được phân phối dưới giấy phép [**MIT License**](LICENSE).
+- **Mô hình AI bên thứ ba**:
+  - `Roboflow/rf-detr-medium`: **Apache-2.0 License**
+  - `facebook/sam2-hiera-small`: **Apache-2.0 License**
+  - `IDEA-Research/grounding-dino-base`: **Apache-2.0 License**
+  - `depth-anything/Depth-Anything-V2-Small-hf`: **Apache-2.0 License**
+- **Dữ liệu Catalog**: Dữ liệu sản phẩm mẫu (1.413 sản phẩm Điện Máy Xanh) phục vụ mục đích nghiên cứu, học thuật và phát triển tính năng.
+
+---
+
+## 🏗️ Kiến trúc & Luồng xử lý (Pipeline)
+
+Quy trình xử lý ảnh phòng gồm 2 giai đoạn:
+
+```
+                  ┌────────────────────────┐
+                  │ Ảnh chụp phòng tải lên │
+                  └───────────┬────────────┘
+                              │
+             ┌────────────────┴────────────────┐
+             ▼                                 ▼
+   [ GIAI ĐOẠN 1: GỢI Ý ]            [ GIAI ĐOẠN 2: PHỐI CẢNH ]
+   RF-DETR Medium                     Grounding DINO + SAM 2 + Depth Anything V2
+         │                                     │
+         ▼                                     ▼
+Phát hiện đồ vật hiện hữu             Phân đoạn Mặt phẳng (Tường/Sàn/Trần/Bàn)
+         │                            & Ước lượng Chiều sâu (Depth Map)
+         ▼                                     │
+Noisy-OR Co-occurrence                         ▼
+  + Room Score W(c, r)                Tìm vị trí đặt tối ưu (Collision, Occlusion)
+         │                                     │
+         ▼                                     ▼
+Truy vấn PostgreSQL Catalog           Gọi API Remove Background tách nền sản phẩm
+         │                                     │
+         ▼                                     ▼
+Xếp hạng Top-K sản phẩm               Phối cảnh 3D, Cân bằng sáng (Relighting)
+         │                            & Đổ bóng tiếp xúc (Contact Shadow)
+         │                                     │
+         ▼                                     ▼
+ 📤 JSON Danh sách gợi ý               🖼️ Ảnh PNG Render hoàn thiện
 ```
 
-`/health/ready` báo rõ nguồn của cả bốn thành phần:
+### 1. Giai đoạn Gợi ý (Recommendation Pipeline)
+- **Công thức xác suất điều kiện Noisy-OR**:
+  $$\hat{P}(e \mid d) = \frac{N(d \cap e) + \alpha \cdot P(e)}{N(d) + \alpha K}, \quad K=2,\ \alpha=1$$
+  $$P_{\text{cooc}}(c \mid D) = 1 - \prod_{d \in D}\left(1 - \hat{P}(\pi(c) \mid d)\right)$$
+- **Điểm tổng hợp**:
+  $$\text{final\_score}(c) = P_{\text{cooc}}(c \mid D) + W(c, r)$$
+  Trong đó $W(c, r)$ là độ tương thích giữa nhóm sản phẩm $c$ và loại phòng $r$ (`living_room`, `bedroom`, `kitchen`,...).
 
+### 2. Giai đoạn Render Không gian (Spatial Placement & Photometric Render)
+- **Xác định bề mặt hợp lệ**: Dựa trên `placement_rules.json` (ví dụ: TV treo tường, Loa đặt sàn/bàn, Máy lạnh gắn sát trần tường).
+- **Tránh va chạm (Collision Avoidance)**: Loại trừ các bounding box đã phát hiện và vùng che chắn.
+- **Tính toán tỷ lệ kích thước (Adaptive Sizing)**: Tự động scale kích thước theo depth tương đối (ví dụ: cặp tỉ lệ tương đối giữa TV và Điều hòa nhiệt độ).
+- **Relighting & Shadowing**: Cân bằng phơi sáng tự động theo ánh sáng nền phòng và tạo bóng đổ tiếp xúc thực tế.
+
+---
+
+## ⚡ Khởi động nhanh (Quick Start)
+
+### Yêu cầu hệ thống
+- **Docker & Docker Compose** (khuyên dùng RAM $\ge$ 8GB cho container AI).
+- Checkpoint và artifacts đã đặt đầy đủ trong thư mục `api/artifacts/`.
+
+### Khởi chạy một lệnh qua Docker
+
+```bash
+# 1. Sao chép file môi trường
+cp .env.example .env
+
+# 2. Khởi động PostgreSQL, FastAPI Backend và Adminer
+docker compose up -d --build
+
+# 3. Kiểm tra trạng thái sẵn sàng (Healthcheck)
+curl -s http://localhost:8000/health/ready | python3 -m json.tool
+```
+
+Khi sẵn sàng, endpoint `/health/ready` sẽ trả về trạng thái của cả 4 nguồn tài nguyên:
 ```json
 {
-  "model_source": "best.pt (rtdetr)",
-  "cooccurrence_source": "cooccurrence_matrix.json (45 class, 1717 ảnh train)",
+  "ready": true,
+  "model_source": "artifacts/rfdetr_medium (rfdetr)",
+  "cooccurrence_source": "cooccurrence_matrix.json (45 class)",
   "room_scores_source": "artifact category_room_scores.json (62 nhóm × 7 phòng) + mwg.categories",
   "catalog_source": "PostgreSQL mwg.product (1413 sản phẩm)"
 }
 ```
 
-Không có nhánh dự phòng nào: nguồn nào thiếu thì API dừng khởi động và log ghi
-đúng đường dẫn đã thử.
+---
+
+## 📡 API Endpoints
+
+### 1. `POST /api/v1/recommendations/image`
+Upload ảnh phòng và nhận danh sách các nhóm sản phẩm gợi ý kèm thông tin chi tiết từng sản phẩm.
 
 ```bash
-curl -X POST "localhost:8000/api/v1/recommendations/image?room_type=living_room&top_k=5" \
-     -F "image=@phong-khach.jpg"
+curl -X POST "http://localhost:8000/api/v1/recommendations/image?room_type=living_room&top_k=5" \
+     -F "image=@room_sample.jpg"
 ```
 
-## Layout
+**Các tham số Query chính:**
+- `room_type`: Loại phòng (`living_room`, `bedroom`, `kitchen`, `dining_room`, `bathroom`, `home_office`, `balcony`). Mặc định: `living_room`.
+- `top_k`: Số lượng nhóm sản phẩm tối đa trả về (1–62). Mặc định: 10.
+- `min_score`: Ngưỡng điểm tối thiểu để được gợi ý (mặc định: 0.05).
+- `exclude_detected`: Loại bỏ các nhóm đồ đã xuất hiện trong ảnh (true/false, mặc định: true).
+- `products_per_group`: Số lượng sản phẩm trả về trong mỗi nhóm (mặc định: 3).
+- `min_price` / `max_price`: Lọc khoảng giá sản phẩm (VND).
+- `category_id`: Lọc theo ngành hàng lớn (`electronics`, `appliances`,...).
+- `confidence`: Ngưỡng tin cậy của object detector (mặc định: 0.5).
 
-```
-docker-compose.yml            postgres + api + adminer, volume pgdata
-db/init/01_schema.sql         schema `mwg`: categories, brand, product (đúng 3 bảng)
-db/init/02_seed.sql           1.413 sản phẩm (SINH từ CSV — đừng sửa tay)
-data/dienmayxanh_products.csv nguồn: 1.413 sản phẩm, 62 nhóm, 157 brand, 5 category
-scripts/import_catalog.py     CSV -> PostgreSQL (xoá sạch + nạp, một transaction)
-scripts/gen_seed_sql.py       CSV -> db/init/02_seed.sql
-scripts/gen_group_scores.py   CSV -> api/artifacts/matrix/category_room_scores.json
-scripts/verify.sh             kiểm tra toàn vẹn catalog + artifact
-api/artifacts/                model .pt + 2 file ma trận (bắt buộc khi chạy)
-api/                          FastAPI: app/ + services/ + tests/
-```
-
-API đọc **bốn nguồn**, không có dự phòng cho nguồn nào:
-
-| Nguồn | Đường dẫn | Thiếu thì |
-| --- | --- | --- |
-| Checkpoint | `MODEL_PATH` (`artifacts/rtdetr_room_detection/weights/best.pt`) | dừng, báo đường dẫn |
-| Ma trận đồng xuất hiện | `COOCCURRENCE_MATRIX_PATH` | dừng, báo đường dẫn |
-| Bảng W(c, r) | `CATEGORY_ROOM_SCORES_PATH` | dừng, báo đường dẫn |
-| Catalog | PostgreSQL `mwg` | dừng, báo host/port/lỗi |
-
-Trước đây API có nhánh dự phòng đọc CSV khi DB chết. Nhánh đó đã bị bỏ: chạy với
-catalog khác nguồn chuẩn mà không ai biết còn tệ hơn là không chạy.
-
-Hai file trong `db/init` chỉ chạy **một lần** khi volume còn trống. Đã có dữ liệu
-rồi thì `make import` (nạp lại, không xoá volume) hoặc `make reset` (xoá volume).
-
-## Dữ liệu
-
-`data/dienmayxanh_products.csv` — 1.413 sản phẩm, 25 sản phẩm/nhóm (vài nhóm ít
-hơn), không có `product_id` trùng, không thiếu `brand`. `api/data/` giữ một bản sao
-để image Docker có CSV dự phòng khi không kết nối được DB.
-
-### Schema `mwg` — 3 bảng
-
-```
-categories ──< product >── brand
-```
-
-| Bảng | Khoá | Nội dung |
-| --- | --- | --- |
-| `categories` | `category_id` (= cột `subcategory`: `tv`, `speaker`, …) | 62 nhóm, `category_name` (= `group_name`), `parent_category_code` (5 mục lớn) |
-| `brand` | `brand_id` (IDENTITY) | 157 hãng, `brand_name` UNIQUE |
-| `product` | `product_id` | 1.413 sản phẩm, FK `category_id` + `brand_id`, `colors`/`tags`/`style`/`placement`/`dimensions` dạng JSONB |
-
-`category_id` của `mwg.product` là **subcategory** của CSV (62 nhóm), không phải 5
-mục lớn. 5 mục lớn nằm ở `categories.parent_category_code`, nhờ vậy một nhóm vừa
-là đơn vị xếp hạng của recommender vừa giữ được phân cấp ngành hàng.
-
-`room_weights` **không** có trong DB — schema 3 bảng không có cột này. Điểm
-W(c, r) đọc từ artifact `api/artifacts/matrix/category_room_scores.json`.
-
-Cột JSON giữ đúng dạng của CSV — `colors` là mảng object `{color_name, color_code}`,
-`tags`/`style`/`placement` là mảng chuỗi, `dimensions` là object (nguồn đang rỗng).
-Kiểm tra bằng JSONB containment:
-
-```sql
-SELECT product_name FROM mwg.product
-WHERE tags @> '["tv"]' LIMIT 5;
-```
-
-### Điểm phù hợp phòng W(c, r) — đọc từ artifact
-
-`api/artifacts/matrix/category_room_scores.json` (Cell 10.7 của notebook) chứa 62
-nhóm × 7 phòng, khoá ngoài là **tên hiển thị** (`"TV"`, `"Loa"`, `"Máy điều hòa"`…).
-Vì khoá là tên, `bootstrap` ghép nó với `mwg.categories` (`category_name` ->
-`category_id`) để có bảng theo `group_code`.
-
-```json
-{
-  "TV": {"living_room": 1.0, "bedroom": 0.8, "kitchen": 0.1, "bathroom": 0.0,
-         "dining_room": 0.4, "home_office": 0.4, "balcony": 0.0},
-  "Loa": {"living_room": 1.0, "bedroom": 0.6, "kitchen": 0.4, "bathroom": 0.0,
-          "dining_room": 0.6, "home_office": 0.8, "balcony": 0.4}
-}
-```
-
-Thiếu file, thiếu phòng, hay điểm ngoài `[0, 1]` đều làm API **dừng khởi động** với
-thông báo chỉ đúng nhóm/phòng sai — không có bảng điểm dự phòng trong code.
-
-Sửa điểm: sửa CSV rồi `make scores`, hoặc sửa thẳng file JSON, rồi khởi động lại API.
-
-## Luồng gợi ý
-
-```
-ảnh ──RT-DETR──> vật thể (Sofa, TV, Wall Art…)
-                      │
-                      ├─ P_cooc(c|D) = 1 − Π(1 − P̂(π(c)|d))   ← cooccurrence_matrix.json
-                      ├─ W(c, r)                                ← category_room_scores.json
-                      └─ final = P_cooc + W(c, r)  → sắp giảm dần → gắn sản phẩm
-```
-
-- Ứng viên: 62 nhóm có sản phẩm trong `mwg.product`.
-- Loại nhóm đã có trong ảnh (có TV rồi thì không gợi ý TV).
-- Chỉ 22 nhóm có detector proxy (`GROUP_TO_DETECTOR`); 40 nhóm còn lại
-  `P_cooc = 0` và xếp hạng thuần theo `W(c, r)` — detector là COCO nội thất, không
-  nhận ra tủ lạnh hay nồi cơm.
-- Sản phẩm trả về: còn hàng, sắp theo giá tăng dần, lọc được theo `min_price`/
-  `max_price` và `category_id`.
-
-Chi tiết công thức + API: xem [`api/README.md`](api/README.md).
-
-## Lệnh thường dùng
+### 2. `POST /api/v1/recommendations/render`
+Upload ảnh phòng, hệ thống tự động phát hiện, gợi ý, tách nền sản phẩm và render phối cảnh trực tiếp lên ảnh. Kết quả trả về là luồng nhị phân ảnh **PNG**.
 
 ```bash
-make up        # dựng DB + API, chờ /health/ready
-make import    # xoá sạch DB, nạp lại từ data/dienmayxanh_products.csv
-make verify    # kiểm tra toàn vẹn catalog (số dòng, FK, CHECK) + artifact
-make psql      # psql vào mwgshop
-make logs      # log API
-make backup    # backups/<ts>.dump
-make reset     # XOÁ volume, dựng lại DB từ db/init
+curl -X POST "http://localhost:8000/api/v1/recommendations/render?room_type=living_room&top_k=3" \
+     -F "image=@room_sample.jpg" \
+     --output result_rendered.png
 ```
 
-Đổi cổng/credentials trong `.env` (copy từ `.env.example`). Cổng host 55432 tránh
-đụng Postgres local ở 5432.
+### 3. `GET /health/ready`
+Kiểm tra tính sẵn sàng của hệ thống (Model, Ma trận xác suất, Điểm phòng, Kết nối PostgreSQL).
 
-## Câu truy vấn mẫu
+---
 
-```sql
--- Số sản phẩm theo 5 mục lớn (parent category)
-SELECT parent_category_code, count(*) AS products, count(DISTINCT p.category_id) AS groups
-FROM mwg.product p
-JOIN mwg.categories c ON c.category_id = p.category_id
-GROUP BY 1 ORDER BY 2 DESC;
+## 📁 Cấu trúc Thư mục Dự án
 
--- Top 5 TV đắt nhất còn hàng
-SELECT p.product_name, b.brand_name, p.price
-FROM mwg.product p
-JOIN mwg.brand b ON b.brand_id = p.brand_id
-WHERE p.category_id = 'tv' AND p.availability
-ORDER BY p.price DESC LIMIT 5;
-
--- Nhóm có nhiều sản phẩm nhất
-SELECT c.category_name, p.category_id, count(*) AS n
-FROM mwg.product p
-JOIN mwg.categories c ON c.category_id = p.category_id
-GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 10;
+```
+recommend-by-image-v5-2/
+├── LICENSE                        # Giấy phép mã nguồn MIT
+├── README.md                      # Tài liệu tổng quan dự án
+├── Makefile                       # Phím tắt các lệnh quản trị tiện lợi
+├── docker-compose.yml             # Cấu hình container: postgres, api, adminer
+├── .env.example                   # Mẫu cấu hình môi trường
+├── data/
+│   └── dienmayxanh_products.csv   # Catalog 1.413 sản phẩm, 62 nhóm, 157 hãng
+├── db/
+│   └── init/
+│       ├── 01_schema.sql          # Khởi tạo schema mwg (categories, brand, product)
+│       └── 02_seed.sql            # Nạp dữ liệu 1.413 sản phẩm
+├── scripts/
+│   ├── import_catalog.py          # Script nạp CSV vào DB
+│   ├── gen_seed_sql.py            # Sinh seed SQL từ CSV
+│   ├── gen_group_scores.py        # Sinh ma trận category_room_scores.json
+│   └── verify.sh                  # Kiểm tra tính toàn vẹn DB & Artifacts
+└── api/
+    ├── README.md                  # Hướng dẫn chi tiết kỹ thuật cho backend
+    ├── Dockerfile                 # Đóng gói image FastAPI (Python 3.14-slim)
+    ├── requirements.txt           # Danh sách thư viện Python
+    ├── artifacts/                 # Weights các mô hình AI và ma trận tính toán
+    │   ├── rfdetr_medium/         # RF-DETR weights (model.safetensors, config)
+    │   ├── sam2_small/            # SAM 2 weights & processor
+    │   ├── grounding_dino_base/   # Grounding DINO weights & tokenizer
+    │   ├── depth_anything_v2_small/ # Depth Anything V2 weights
+    │   ├── placement_rules.json   # Bộ luật quy định vị trí và kích thước gắn vật thể
+    │   └── matrix/
+    │       ├── cooccurrence_matrix.json  # Ma trận đồng xuất hiện COCO
+    │       └── category_room_scores.json # Bảng điểm tương thích phòng W(c,r)
+    ├── app/
+    │   ├── main.py                # Điểm khởi tạo FastAPI app
+    │   ├── core/                  # Cấu hình Settings và Exception Handlers
+    │   ├── api/routes/            # Endpoints: recommendations, health
+    │   └── services/              # Các service AI: detector, placement, recommender,...
+    └── tests/                     # 65+ unit tests kiểm thử logic & API
 ```
 
-## Ghi chú nguồn
+---
 
-- Trường `brand` của bản ghi này **không sạch**: 348/1.413 giá trị là từ đầu tiên
-  của tên sản phẩm (`"Quạt"`, `"Nồi"`, `"Loa"`, `"Camera"`, `"Cây"`…) chứ không
-  phải tên hãng; một số khác là mã model (`"LTH-200W"`) hoặc chính tên nhóm
-  (`"Dienmayxanh"`). Giữ nguyên vì đây là dữ liệu nguồn — muốn sửa thì làm ở CSV
-  rồi `make import` lại.
-- `availability` toàn bộ `TRUE`; `colors` toàn bộ một màu `Đen`; `style` toàn bộ
-  `["modern"]`; `placement` toàn bộ `["floor"]`; `dimensions` toàn bộ `{}`.
-  Đây là dữ liệu chưa được làm giàu, không phải lỗi import.
-- `description` 1.413/1.413 giá trị trùng `product_name` — nguồn không có mô tả riêng.
+## 🛠️ Makefile Cheatsheet
+
+```bash
+make up        # Dựng Docker container (DB + API + Adminer) và chờ sẵn sàng
+make down      # Dừng và hạ containers (giữ nguyên volume dữ liệu)
+make logs      # Theo dõi log thời gian thực của API
+make import    # Xoá sạch DB và nạp lại toàn bộ từ CSV
+make verify    # Kiểm tra toàn vẹn dữ liệu database và sự hiện diện của model artifacts
+make test      # Chạy test suite (pytest) trong thư mục api/
+make psql      # Mở terminal psql tương tác trực tiếp vào database mwgshop
+make reset     # Xoá hoàn toàn volume cơ sở dữ liệu và khởi tạo lại từ đầu
+```
+
+---
+
+## 📚 Thông tin Tham chiếu & Tài liệu Kỹ thuật
+
+- Thông số đánh giá trên tập kiểm thử (Cell 10b Validation):
+  - Phương pháp Noisy-OR smoothed ($\alpha=1$): **AP = 0.3806**, **AUC = 0.9397** (vượt trội so với trung bình thô AP = 0.3276).
+  - Đối với các nhóm proxy ít xuất hiện (support < 50): AP tăng vọt từ **0.1980 $\rightarrow$ 0.3662**.
+- Chi tiết kỹ thuật về các hàm giải thuật: Xem tiếp tại [**`api/README.md`**](api/README.md).

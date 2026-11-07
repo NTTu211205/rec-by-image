@@ -6,7 +6,7 @@
 # DB tự nạp 1.413 sản phẩm từ api/data/dienmayxanh_products.csv khi volume còn trống
 # (db/init/01_schema.sql dựng 3 bảng schema `mwg`, db/init/02_seed.sql nạp dữ liệu).
 # Cùng một network nên API gọi DB qua hostname `postgres`.
-name: recommend-by-image-v5-1
+name: recommend-by-image-v5-2
 
 services:
   postgres:
@@ -66,9 +66,9 @@ services:
       - ./api/app:/app/app:ro
       - ./api/artifacts:/app/artifacts:ro
     environment:
-      # Đường dẫn TÍNH TỪ /app trong container. Cả ba file dưới đây là bắt buộc:
+      # Đường dẫn TÍNH TỪ /app trong container. Cả ba file/thư mục dưới đây là bắt buộc:
       # thiếu file nào thì API dừng khởi động và báo rõ đường dẫn (không dự phòng).
-      MODEL_PATH: artifacts/rtdetr_room_detection/weights/best.pt
+      MODEL_PATH: artifacts/rfdetr_medium
       COOCCURRENCE_MATRIX_PATH: artifacts/matrix/cooccurrence_matrix.json
       CATEGORY_ROOM_SCORES_PATH: artifacts/matrix/category_room_scores.json
 
@@ -83,8 +83,8 @@ services:
 
       # Container không có GPU -> luôn CPU.
       MODEL_DEVICE: cpu
-      # Cell 9: đối chiếu class checkpoint với cooccurrence_matrix.json.
-      REQUIRE_CLASS_MATCH: "true"
+      # Đối chiếu class checkpoint với cooccurrence_matrix.json (RF-DETR tự động bỏ qua khớp cứng).
+      REQUIRE_CLASS_MATCH: "false"
 
       # Ghi đè tham số gợi ý khi cần, không phải build lại image.
       DEFAULT_ROOM_TYPE: "${DEFAULT_ROOM_TYPE:-living_room}"

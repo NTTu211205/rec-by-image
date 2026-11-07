@@ -15,5 +15,12 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# Artifact model: nhị phân lớn, copy từ nơi train ra (không sinh trong repo).
-api/artifacts/rtdetr_room_detection/
+# Artifact model: nhị phân lớn
+api/artifacts/rfdetr_medium/
+api/artifacts/sam2_small/
+api/artifacts/grounding_dino_base/
+api/artifacts/depth_anything_v2_small/
+
+# OS files
+.DS_Store
+*/.DS_Store

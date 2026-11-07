@@ -1,275 +1,191 @@
-# AI Backend — RT-DETR room recommendation (Cell 1 → 10.14)
+# AI Backend — Gợi ý & Phối cảnh Không gian Phòng (FastAPI)
 
-FastAPI port của notebook `yolo_train_predict_v5_spatial_relationships_rtdetr.ipynb`,
-**chỉ tới Cell 10.14** (pipeline gợi ý từ ảnh). Cell 10b (đánh giá AP/AUC) **không
-được port** — API chỉ phục vụ hai endpoint.
+Hệ thống AI Backend xây dựng trên **FastAPI (Python 3.14)** cung cấp 2 năng lực cốt lõi:
+1. **Gợi ý sản phẩm thông minh**: Phân tích đồ nội thất trong ảnh phòng qua detector tiên tiến, áp dụng mô hình xác suất điều kiện Noisy-OR và độ phù hợp không gian phòng để xếp hạng danh mục sản phẩm điện máy từ catalog PostgreSQL MWG.
+2. **Phối cảnh 3D & Relighting**: Phân đoạn bề mặt phẳng (tường, sàn, trần, bàn), ước lượng bản đồ chiều sâu (depth map), tự động gọi tách nền sản phẩm và ghép chân thực vào không gian phòng với bóng đổ tiếp xúc và cân bằng sáng.
 
-## Không có bước train
+---
 
-Cell 8 (`model.train(...)`) **không được port**. Model chỉ được **đọc từ file `.pt`**:
+## 🤖 Foundation Models, Checkpoints & Licenses
 
-```python
-# Cell 9 của notebook
-best_model_path = rtdetr_checkpoints[0]
-model = RTDETR(str(best_model_path))
+Hệ thống sử dụng các foundation models hàng đầu trong thị giác máy tính và phân tích không gian. Tất cả weights được lưu trữ tại `api/artifacts/`:
+
+| Mô hình | Định dạng & Thư mục | Nguồn & Link Model | License | Chức năng trong Backend |
+| :--- | :--- | :--- | :--- | :--- |
+| **RF-DETR Medium** | `artifacts/rfdetr_medium/`<br>`model.safetensors` (~135MB) | [Roboflow/rf-detr-medium](https://huggingface.co/Roboflow/rf-detr-medium)<br>[GitHub](https://github.com/roboflow/rf-detr) | **Apache-2.0** | Object Detector phát hiện các đồ vật nội thất hiện hữu (Sofa, TV, Giường, Bàn, Tủ lạnh...) làm điều kiện tiên nghiệm $d \in D$. |
+| **SAM 2 Small**<br>*(Segment Anything 2)* | `artifacts/sam2_small/`<br>`model.safetensors` (~184MB) | [facebook/sam2-hiera-small](https://huggingface.co/facebook/sam2-hiera-small)<br>[GitHub](https://github.com/facebookresearch/sam2) | **Apache-2.0** | Sinh mặt nạ phân đoạn (segmentation mask) độ chính xác cao cho từng bề mặt (sàn, tường, trần, bàn) và vật cản phòng. |
+| **Grounding DINO Base** | `artifacts/grounding_dino_base/`<br>`model.safetensors` (~933MB) | [IDEA-Research/grounding-dino-base](https://huggingface.co/IDEA-Research/grounding-dino-base)<br>[GitHub](https://github.com/IDEA-Research/GroundingDINO) | **Apache-2.0** | Open-vocabulary text-prompted detection (`"wall. floor. ceiling. table."`) tạo prompt box chuẩn xác cung cấp cho SAM 2. |
+| **Depth Anything V2 Small** | `artifacts/depth_anything_v2_small/`<br>`model.safetensors` (~99MB) | [depth-anything/Depth-Anything-V2-Small-hf](https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf)<br>[GitHub](https://github.com/DepthAnything/Depth-Anything-V2) | **Apache-2.0** | Ước lượng bản đồ chiều sâu đơn mục (Monocular Depth), phân tầng z-depth, scale kích thước phối cảnh và xử lý che khuất (occlusion). |
+
+### Giấy phép bản quyền (Project License)
+- Toàn bộ source code của API được phát hành theo giấy phép [**MIT License**](../LICENSE).
+- Các mô hình AI nền tảng đi kèm đều sử dụng giấy phép nguồn mở tương thích cao [**Apache-2.0**](http://www.apache.org/licenses/LICENSE-2.0).
+
+---
+
+## 📂 Danh mục Artifacts bắt buộc (`api/artifacts/`)
+
+Backend khởi động với cơ chế kiểm tra toàn vẹn tài nguyên nghiêm ngặt (Strict Resource Verification). Nếu thiếu bất kỳ tệp artifact nào, server sẽ lập tức dừng khởi động và thông báo rõ ràng trong log:
+
+```
+api/artifacts/
+├── rfdetr_medium/
+│   ├── config.json
+│   ├── preprocessor_config.json
+│   └── model.safetensors                 # Trọng số RF-DETR Medium
+├── sam2_small/
+│   ├── config.json
+│   ├── preprocessor_config.json
+│   ├── processor_config.json
+│   └── model.safetensors                 # Trọng số SAM 2 Small
+├── grounding_dino_base/
+│   ├── config.json
+│   ├── tokenizer.json, vocab.txt...
+│   └── model.safetensors                 # Trọng số Grounding DINO
+├── depth_anything_v2_small/
+│   ├── config.json
+│   ├── preprocessor_config.json
+│   └── model.safetensors                 # Trọng số Depth Anything V2
+├── placement_rules.json                  # Luật hình học đặt vật thể (mặt phẳng, tỷ lệ, ràng buộc)
+└── matrix/
+    ├── cooccurrence_matrix.json          # Ma trận đồng xuất hiện COCO (45 class)
+    └── category_room_scores.json         # Điểm phù hợp W(c, r) cho 62 nhóm × 7 phòng
 ```
 
-API tái tạo đúng việc đó, tự nhận diện kiến trúc bên trong checkpoint:
+---
 
-| class trong checkpoint | Loader dùng |
-| --- | --- |
-| `RTDETRDetectionModel` | `ultralytics.RTDETR` |
-| `DetectionModel` | `ultralytics.YOLO` |
+## 🧮 Giải thuật & Công thức Tính toán
 
-Nên cùng một `MODEL_PATH` chạy được cả checkpoint RT-DETR lẫn YOLO cũ.
-
-## Bản đồ cell → module
-
-| Notebook | Nội dung | Module |
-| --- | --- | --- |
-| Cell 1–5 | path, data layout | `app/core/config.py` |
-| Cell 6 | `CLASS_MERGE_MAP`, `DROP_CLASSES`, `build_class_map` | `app/services/cooccurrence.py` |
-| Cell 7 | `data.yaml` | dùng để suy ra bộ class (`expected_detector_classes`) |
-| **Cell 8** | **train** | **KHÔNG port** |
-| Cell 9 | load `.pt` + kiểm tra class | `app/services/detector.py` |
-| Cell 10.1 | hằng số cấu hình | `app/core/config.py` |
-| Cell 10.2 | `GROUP_TO_DETECTOR`, `DETECTOR_TO_GROUP` | `app/services/recommender.py` |
-| Cell 10.3 | `build_cooccurrence_matrix` | `app/services/cooccurrence.py` |
-| Cell 10.4 | `P`, `P_smoothed`, `BASE_RATE`, `N` | `Recommender.p_smoothed` |
-| Cell 10.5 | lưu `cooccurrence_matrix.json` | `scripts/build_artifacts.py` |
-| Cell 10.6 | `W(c, r)` | `app/services/room_scores.py` (đọc artifact JSON) |
-| Cell 10.7 | hàm `W` | `Recommender.w` |
-| Cell 10.8 | `load_catalog` | `app/services/product_catalog.py` (PostgreSQL → CSV) |
-| Cell 10.9 | Noisy-OR, `build_reason` | `Recommender.cooccurrence_score` |
-| Cell 10.10 | `recommend()` | `Recommender.recommend` |
-| Cell 10.11 / 10.15 | hiển thị | bỏ (API trả JSON) |
-| Cell 10.12 | `load_image` | `app/services/images.py` |
-| Cell 10.13 | `detect_objects` | `Detector.detect` |
-| Cell 10.14 | pipeline | `POST /api/v1/recommendations/image` |
-| Cell 10b.1–10b.3 | đánh giá AP/AUC | **không port** (số liệu vẫn ở mục dưới) |
-| Cell 10c trở đi | spatial placement | **ngoài phạm vi** |
-
-### Đường dẫn artifact
-
-| Biến | Giá trị | Ghi chú |
-| --- | --- | --- |
-| `MODEL_PATH` | `artifacts/rtdetr_room_detection/weights/best.pt` | run `rtdetr_room_detection` |
-| `COOCCURRENCE_MATRIX_PATH` | `artifacts/matrix/cooccurrence_matrix.json` | Cell 10.3 + 10.5 |
-| `CATEGORY_ROOM_SCORES_PATH` | `artifacts/matrix/category_room_scores.json` | W(c,r), bắt buộc |
-| `DB_HOST` / `DB_PORT` | `postgres` / `5432` | service trong compose gốc |
-| `DB_SCHEMA` | `mwg` | schema chứa 3 bảng (`product`, `categories`, `brand`) |
-
-`W(c, r)` đọc từ `artifacts/matrix/category_room_scores.json` (Cell 10.7) qua
-`app/services/room_scores.py`. File khoá theo **tên nhóm hiển thị**, nên bootstrap
-ghép với `mwg.categories` để ra bảng theo `group_code`. Sinh lại bằng
-`python3 ../scripts/gen_group_scores.py`; đổi điểm thì sửa CSV rồi chạy lại.
-
-## Dữ liệu: PostgreSQL là nguồn chính
-
-Catalog 1.413 sản phẩm nằm trong schema `mwg` của PostgreSQL (đúng 3 bảng:
-`product`, `categories`, `brand`). API join `product` + `brand` lúc khởi động.
-**Không còn fallback CSV**: không kết nối được thì khởi động thất bại với
-`DataSourceError` nêu rõ host/port/database và loại lỗi.
-
-```bash
-# Từ thư mục gốc repo
-docker compose up -d --build     # postgres + api + adminer
-curl -s localhost:8000/health/ready | python3 -m json.tool
-```
-
-`catalog_source` phải là `PostgreSQL mwg.product (1413 sản phẩm)`. Sai cổng/mật
-khẩu/schema thì container dừng ngay và `docker compose logs api` ghi rõ lỗi.
-
-| Lệnh (thư mục gốc) | Việc |
-| --- | --- |
-| `make up` | dựng DB + API |
-| `make import` | xoá sạch DB, nạp lại từ `data/dienmayxanh_products.csv` |
-| `make seed` | sinh lại `db/init/02_seed.sql` từ CSV |
-| `make scores` | sinh lại `api/artifacts/matrix/category_room_scores.json` từ CSV |
-| `make verify` | kiểm tra toàn vẹn catalog |
-
-## Chạy
-
-### Docker (một lệnh, từ thư mục gốc repo)
-
-```bash
-docker compose up -d --build     # postgres + api + adminer
-```
-
-hoặc `make up`. Compose gốc (`../docker-compose.yml`) dựng cả DB lẫn API trong cùng
-network, API gọi DB qua hostname `postgres`. DB tự nạp 1.413 sản phẩm từ
-`db/init/02_seed.sql` khi volume còn trống.
-
-(`api/.env` chỉ dùng cho chạy local, không dùng trong container — biến của container
-khai sẵn trong `docker-compose.yml`.)
-
-Mở http://127.0.0.1:8000/docs. Container tự chứa checkpoint `.pt`, ma trận đồng
-xuất hiện, annotation COCO; sản phẩm đọc từ PostgreSQL.
-
-Lệnh hữu ích (chạy từ **thư mục gốc repo**):
-
-| Lệnh | Việc |
-| --- | --- |
-| `make up` | build nếu cần + chạy DB & API + chờ ready |
-| `make logs` | xem log API |
-| `make import` | xoá sạch DB, nạp lại từ CSV |
-| `make verify` | kiểm tra toàn vẹn catalog |
-| `make down` | dừng, xoá container (giữ volume) |
-| `make reset` | xoá volume rồi dựng lại DB |
-
-Đổi cổng: `API_PORT=9000 make up` (hoặc sửa `API_PORT` trong `.env`).
-
-### Local (không Docker)
-
-```bash
-cd api
-cp .env.example .env          # DB_* trỏ về 127.0.0.1:55432 (DB trong docker)
-# muốn chạy không cần DB: đặt DB_HOST= rỗng -> tự dùng CSV
-
-# 1) Sinh ma trận đồng xuất hiện (Cell 10.3 + 10.5) từ COCO train
-python scripts/build_artifacts.py
-
-# 2) Trỏ MODEL_PATH tới checkpoint .pt có sẵn (Cell 9). API không train.
-#    Mặc định đã trỏ vào run train sẵn có:
-#    artifacts/rtdetr_room_detection/weights/best.pt
-python scripts/build_artifacts.py --model /duong/dan/rtdetr_room_detection/weights/best.pt
-
-# 3) Chạy
-uvicorn app.main:get_app --factory --host 127.0.0.1 --port 8000
-```
-
-Muốn chạy hoàn toàn không cần PostgreSQL: để `DB_HOST=` rỗng, API tự đọc
-`data/dienmayxanh_products.csv` và `/health/ready` sẽ báo `catalog_source` là CSV.
-
-
-Swagger: http://127.0.0.1:8000/docs · ReDoc: http://127.0.0.1:8000/redoc ·
-OpenAPI: http://127.0.0.1:8000/openapi.json
-
-## Tài liệu API (Swagger)
-
-- `/docs` — **Swagger UI**, có nút *Try it out* gọi thẳng API, ví dụ request điền sẵn.
-- `/redoc` — **ReDoc**, đọc hợp đồng API dạng tài liệu.
-- `/openapi.json` — schema OpenAPI 3.1 (dùng để code-gen client).
-
-Tài liệu được sinh tự động từ Pydantic + docstring. Mô tả cố ý **ngắn** (một dòng
-mỗi mục); công thức và hướng dẫn chi tiết nằm ở README này, không lặp lại trong
-Swagger:
-
-| Nội dung | Ở đâu |
-| --- | --- |
-| Mô tả tổng (một câu) | `API_DESCRIPTION` trong `app/api/openapi.py` |
-| Mô tả từng nhóm endpoint | `TAGS_METADATA` |
-| Mô tả route + tham số | `description` trong `app/api/routes/*.py` |
-| Ví dụ request/response | `model_config` trong `app/schemas/recommendation.py` |
-| Phản hồi lỗi dùng chung (`$ref` tới `ErrorResponse`) | `ERROR_CONTENT` |
-
-`tests/test_docs.py` chặn mô tả phình to: `info.description` ≤ 300 ký tự,
-`description` của operation ≤ 200 ký tự và chỉ một dòng, mô tả field ≤ 120 ký tự.
-
-Tắt tài liệu khi production: `DOCS_ENABLED=false` → `/docs`, `/redoc`,
-`/openapi.json` đều trả 404.
-
-## Endpoint
-
-Chỉ hai endpoint:
-
-| Method | Path | Cell | Mô tả |
-| --- | --- | --- | --- |
-| POST | `/api/v1/recommendations/image` | 10.12 + 10.13 + 10.10 | Upload ảnh → detect → gợi ý |
-| GET | `/health/ready` | — | Model + dữ liệu đã nạp xong (503 nếu chưa) |
-
-```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/recommendations/image?room_type=living_room&top_k=5" \
-     -F "image=@phong-khach.jpg"
-```
-
-Không còn endpoint để liệt kê `room_type`, `category_id` hay class detector. Danh
-sách `room_type` hợp lệ là `ROOM_CODES` trong `app/services/room_scores.py` (7 giá
-trị: `balcony`, `bathroom`, `bedroom`, `dining_room`, `home_office`, `kitchen`,
-`living_room`); `category_id` là 5 khoá của `CATEGORY_NAMES`. Truyền sai sẽ nhận
-`404 not_found` kèm danh sách hợp lệ trong `message`.
-
-Tham số `category_id` (tuỳ chọn) giới hạn kết quả trong một ngành hàng — hữu ích
-khi muốn "chỉ đồ nhà bếp" thay vì trộn cả catalog.
-
-## Công thức (giữ nguyên notebook)
-
-\[
+### 1. Ma trận đồng xuất hiện Noisy-OR smoothed
+Xác suất có mặt của nhóm mục tiêu $e$ khi xuất hiện vật thể nhận diện $d$:
+$$
 \hat{P}(e \mid d) = \frac{N(d \cap e) + \alpha \cdot P(e)}{N(d) + \alpha K}, \quad K=2,\ \alpha=1
-\]
+$$
 
-\[
+Tổng hợp bằng mô hình Noisy-OR trên tập vật thể phát hiện được trong phòng $D$:
+$$
 P_{\text{cooc}}(c \mid D) = 1 - \prod_{d \in D}\left(1 - \hat{P}(\pi(c) \mid d)\right)
-\]
+$$
 
-\[
+### 2. Điểm tổng hợp
+$$
 \text{final\_score}(c) = P_{\text{cooc}}(c \mid D) + W(c, r)
-\]
+$$
+- $W(c, r)$: Trọng số độ phù hợp của nhóm $c$ trong ngữ cảnh phòng $r$ (`living_room`, `bedroom`, `kitchen`, `dining_room`, `bathroom`, `home_office`, `balcony`).
+- Nếu trong ảnh đã có sản phẩm thuộc nhóm $c$ (ví dụ: đã phát hiện TV), nhóm này sẽ được tự động loại bỏ (`exclude_detected=true`) để tránh gợi ý trùng lặp.
 
-Lưu ý: Cell 10.10 dùng **phép cộng** (`cooc + room_score`), không phải nhân.
+### 3. Kết quả đối sánh (Validation Reference)
+| Phương pháp | AP | AUC |
+| :--- | :--- | :--- |
+| Trung bình cộng thông thường | 0.3276 | 0.9263 |
+| **Noisy-OR + $\alpha=1$ (Hiện tại)** | **0.3806** | **0.9397** |
+| Nhóm vật thể hiếm (support < 50) | 0.1980 | **0.3662** |
 
-## Kết quả Cell 10b.3 (tham chiếu — chạy trên split valid)
+---
 
-Số liệu dưới đây là kết quả đánh giá của notebook, **giữ lại để tham chiếu**; API
-không còn endpoint đánh giá (Cell 10b không được port).
+## 🚀 Endpoints & Hướng dẫn Tích hợp
 
-| Công thức | AP | AUC |
-| --- | --- | --- |
-| Trung bình thô (cũ) | 0.3276 | 0.9263 |
-| Noisy-OR + α=1 (mới) | **0.3806** | **0.9397** |
+### 1. `POST /api/v1/recommendations/image`
+Upload ảnh phòng và nhận danh sách các nhóm sản phẩm được xếp hạng cùng các sản phẩm tương ứng trong catalog.
 
-Proxy hiếm (support < 50): AP **0.1980 → 0.3662**, đúng như số liệu ghi trong notebook.
-
-## Dữ liệu & artifact
-
-- `artifacts/matrix/cooccurrence_matrix.json` — sinh bởi `scripts/build_artifacts.py`
-- `artifacts/rtdetr_room_detection/weights/best.pt` — checkpoint RT-DETR **copy sẵn**
-  (không sinh ra từ API); `last.pt` cùng thư mục là bản của epoch cuối
-- `data/coco/train/_annotations.coco.json` — bản sao annotation COCO (2.1 MB), đủ
-  cho `expected_detector_classes`; không cần 82 MB ảnh.
-- `data/dienmayxanh_products.csv` — 1.413 sản phẩm, 62 nhóm, 157 brand, 5 category
-- `db/init/01_schema.sql` — schema `mwg` (3 bảng + index + CHECK)
-- `db/init/02_seed.sql` — dữ liệu sinh từ CSV, chạy một lần khi volume trống
-- `app/services/room_scores.py` — đọc `W(c, r)` từ artifact JSON, kiểm tra 7 phòng/nhóm
-  ma trận từ ảnh (`scripts/build_artifacts.py`)
-- `W(c, r)` — `artifacts/matrix/category_room_scores.json`
-
-Trong container mọi đường dẫn tính từ `/app`, nên `.env` không dùng cho Docker —
-biến môi trường được khai trong `docker-compose.yml`.
-
-## Test
-
+**Cú pháp cURL mẫu:**
 ```bash
-python -m pytest tests -q     # 65 test: công thức, xếp hạng, catalog DB/CSV, endpoint, OpenAPI
+curl -X POST "http://localhost:8000/api/v1/recommendations/image?room_type=living_room&top_k=5&products_per_group=3" \
+     -H "Accept: application/json" \
+     -F "image=@room_sample.jpg"
 ```
 
-## Ghi chú
+**Cấu trúc dữ liệu JSON trả về:**
+```json
+{
+  "room_type": "living_room",
+  "detected_objects": [
+    {"class_name": "Sofa", "confidence": 0.92, "box": [120, 340, 890, 710]}
+  ],
+  "recommendations": [
+    {
+      "category_id": "tv",
+      "category_name": "TV",
+      "final_score": 1.745,
+      "cooccurrence_score": 0.745,
+      "room_score": 1.0,
+      "reason": "Thường đi kèm với Sofa trong Phòng khách",
+      "products": [
+        {
+          "product_id": "312456",
+          "product_name": "Smart Tivi Samsung 4K 55 inch",
+          "price": 12490000.0,
+          "brand_name": "Samsung",
+          "image_url": "https://cdn.tgdd.vn/products/..."
+        }
+      ]
+    }
+  ]
+}
+```
 
-- `REQUIRE_CLASS_MATCH` — kiểm tra checkpoint có đúng 45 class như Cell 9, đối chiếu
-  với `cooccurrence_matrix.json["classes"]` (không cần thư mục COCO). Bật `true`;
-  lớp bảo vệ này báo lỗi nếu sau này thay nhầm checkpoint.
-- Ma trận có **45 class** nhưng `Phone` và `Power Surge Protector` có
-  `support = 0` (không có annotation trong train), nên `P̂` của chúng chỉ còn prior.
-  Đây là hành vi đúng của Cell 10.3, không phải lỗi.
-- **Không có fallback.** Thiếu checkpoint / ma trận / file điểm phòng / DB thì
-  `build_state` raise `ArtifactError` hoặc `DataSourceError`, container dừng và
-  `docker compose logs api` ghi đúng đường dẫn hoặc bảng thiếu. Đây là lựa chọn có
-  chủ ý: chạy với nguồn khác chuẩn mà không ai biết còn tệ hơn là không chạy.
-- `W(c, r)` là **giả định thiết kế**, không phải dữ liệu đo. File JSON khoá theo
-  tên hiển thị; nếu đổi tên trong `mwg.categories` mà không sinh lại artifact thì
-  bootstrap báo `thiếu điểm phòng cho N nhóm` kèm danh sách.
-- Nhóm **không có detector proxy** (phần lớn catalog: tủ lạnh, nồi cơm, máy giặt…)
-  có `P_cooc = 0` và chỉ xếp theo `W(c, r)`. Đây là giới hạn của detector COCO nội
-  thất, không phải lỗi: danh sách proxy nằm ở `GROUP_TO_DETECTOR`.
+---
 
-### Docker
+### 2. `POST /api/v1/recommendations/render`
+Phối cảnh sản phẩm trực tiếp lên ảnh không gian phòng. Tự động tải ảnh sản phẩm từ catalog, gọi API tách nền, căn chỉnh phối cảnh 3D và cân bằng ánh sáng.
 
-- `python:3.14-slim-trixie` + torch/torchvision **bản CPU** từ index `+cpu` của
-  PyTorch (tránh kéo CUDA ~2.5 GB). Image ~2.5 GB.
-- Base image trixie đổi tên `libglib2.0-0` → `libglib2.0-0t64`.
-- Chạy bằng user `app` (uid 1000), không phải root.
-- `HEALTHCHECK` gọi `/health/ready` để orchestration chỉ coi container là sẵn sàng
-  khi model đã nạp + warmup xong.
-- Lần build đầu tải torch 159 MB. Nếu mạng đứt, `PIP_RETRIES=10` giúp thử lại;
-  build lại sẽ dùng cache các layer trước.
+**Cú pháp cURL mẫu:**
+```bash
+curl -X POST "http://localhost:8000/api/v1/recommendations/render?room_type=living_room&top_k=3" \
+     -F "image=@room_sample.jpg" \
+     --output result_rendered.png
+```
 
+- **Đầu ra**: File ảnh định dạng `image/png`.
+
+---
+
+### 3. `GET /health/ready`
+Kiểm tra sức khỏe và độ sẵn sàng của hệ thống AI Backend:
+
+```bash
+curl -s http://localhost:8000/health/ready
+```
+
+**Phản hồi:**
+```json
+{
+  "ready": true,
+  "model_source": "artifacts/rfdetr_medium (rfdetr)",
+  "cooccurrence_source": "cooccurrence_matrix.json (45 class, 1717 ảnh train)",
+  "room_scores_source": "artifact category_room_scores.json (62 nhóm × 7 phòng) + mwg.categories",
+  "catalog_source": "PostgreSQL mwg.product (1413 sản phẩm)"
+}
+```
+
+---
+
+## 💻 Chạy Local (Không qua Docker)
+
+```bash
+# 1. Điều hướng vào thư mục api
+cd api
+
+# 2. Cài đặt các thư viện phụ thuộc
+pip install -r requirements.txt
+
+# 3. Thiết lập file cấu hình môi trường
+cp .env.example .env
+
+# 4. Chạy server qua uvicorn
+uvicorn app.main:get_app --factory --host 0.0.0.0 --port 8000 --reload
+```
+
+---
+
+## 🧪 Kiểm thử (Testing)
+
+Suite kiểm thử bao quát toàn bộ logic xếp hạng, tính toàn vẹn artifact, schema validation và API endpoints:
+
+```bash
+# Chạy toàn bộ test
+pytest tests -v
+
+# Chạy kiểm tra tài liệu OpenAPI
+pytest tests/test_docs.py -v
+```
