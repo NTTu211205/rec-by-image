@@ -29,6 +29,7 @@ Hệ thống kết hợp 4 mô hình AI thị giác máy tính tiên tiến nh�
 | **SAM 2 Small**<br>*(Segment Anything 2)* | Phân đoạn chính xác mặt phẳng (tường, sàn, trần, mặt bàn) và tạo mặt nạ vật cản chi tiết cho thuật toán placement | `facebook/sam2-hiera-small`<br>*(Hiera-Small)* | [Hugging Face](https://huggingface.co/facebook/sam2-hiera-small) · [GitHub](https://github.com/facebookresearch/sam2) | **Apache-2.0** |
 | **Grounding DINO Base** | Zero-shot open-vocabulary detection để tìm các vùng bề mặt phòng (`wall`, `floor`, `ceiling`, `table`) làm prompt box cho SAM 2 | `IDEA-Research/grounding-dino-base` | [Hugging Face](https://huggingface.co/IDEA-Research/grounding-dino-base) · [GitHub](https://github.com/IDEA-Research/GroundingDINO) | **Apache-2.0** |
 | **Depth Anything V2 Small** | Ước lượng bản đồ chiều sâu đơn mục (Monocular Depth Estimation), xác định độ sâu tương đối, tỷ lệ phối cảnh và thứ tự che khuất | `depth-anything/Depth-Anything-V2-Small-hf` | [Hugging Face](https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf) · [GitHub](https://github.com/DepthAnything/Depth-Anything-V2) | **Apache-2.0** |
+| **FLUX.2 Klein 4B**<br>*(Black Forest Labs)* | Hoàn thiện ảnh phối cảnh sinh thực tế (Generative Harmonization & Relighting): tái tạo ánh sáng, bóng đổ tiếp xúc và khử viền ghép | `black-forest-labs/FLUX.2-klein-4B`<br>*(Distilled 4-Step Flow)* | [Hugging Face](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) · [BFL](https://bfl.ai) | **Apache-2.0** |
 
 > Ngoài ra, hệ thống tích hợp API tách nền chuẩn nội bộ (`REMOVE_BG_BASE_URL=https://ai.itmwg.vn/api/remove-background`) để trích xuất vật thể không nền từ catalog phục vụ ghép ảnh.
 
@@ -42,6 +43,7 @@ Hệ thống kết hợp 4 mô hình AI thị giác máy tính tiên tiến nh�
   - `facebook/sam2-hiera-small`: **Apache-2.0 License**
   - `IDEA-Research/grounding-dino-base`: **Apache-2.0 License**
   - `depth-anything/Depth-Anything-V2-Small-hf`: **Apache-2.0 License**
+  - `black-forest-labs/FLUX.2-klein-4B`: **Apache-2.0 License**
 - **Dữ liệu Catalog**: Dữ liệu sản phẩm mẫu (1.413 sản phẩm Điện Máy Xanh) phục vụ mục đích nghiên cứu, học thuật và phát triển tính năng.
 
 ---

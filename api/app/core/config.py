@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     remove_bg_api_url: str = ""
     remove_bg_timeout_s: float = Field(120.0, gt=0)
 
+    # --- FLUX.2 Klein 4B Generative Render ---
+    flux_render_enabled: bool = False
+    flux_model_id: str = "black-forest-labs/FLUX.2-klein-4B"
+    flux_device: str = "auto"
+    flux_inference_steps: int = Field(4, ge=1, le=50)
+    flux_denoising_strength: float = Field(0.38, ge=0.05, le=1.0)
+
     @model_validator(mode="after")
     def _resolve_remove_bg_url(self) -> Settings:
         if not self.remove_bg_api_url and self.remove_bg_base_url:

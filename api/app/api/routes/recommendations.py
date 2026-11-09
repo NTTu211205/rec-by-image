@@ -233,6 +233,10 @@ async def recommend_and_render_from_image(
         description="Ngưỡng confidence của detector.",
         examples=[0.5],
     ),
+    use_flux: bool | None = Query(
+        None,
+        description="Bật FLUX.2 Klein 4B để tái tạo ánh sáng và đổ bóng chân thực (Generative Harmonization).",
+    ),
 ) -> Response:
     if not state.ready:
         raise ModelNotReadyError("Model chưa sẵn sàng.")
@@ -266,12 +270,19 @@ async def recommend_and_render_from_image(
             exclude_detected=(
                 settings.default_exclude_detected if exclude_detected is None else exclude_detected
             ),
-            products_per_group=products_per_group or settings.products_per_group,
+            products_per_group=products_per_group or max(settings.products_per_group, 8),
             price_range=_price_range(min_price, max_price),
             category_id=category,
         )
         # Spatial placement and photometric render (V8.20)
         client_user_agent = request.headers.get("user-agent")
+        flux_enabled = False if use_flux is False else bool(use_flux or settings.flux_render_enabled)
+        flux_settings = {
+            "model_id": settings.flux_model_id,
+            "device": settings.flux_device,
+            "inference_steps": settings.flux_inference_steps,
+            "denoising_strength": settings.flux_denoising_strength,
+        }
         render_result = await asyncio.get_running_loop().run_in_executor(
             state.executor,
             render_room_recommendations,
@@ -280,6 +291,8 @@ async def recommend_and_render_from_image(
             settings.remove_bg_api_url,
             None,
             client_user_agent,
+            flux_enabled,
+            flux_settings,
         )
     finally:
         state.release()

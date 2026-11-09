@@ -97,6 +97,11 @@ services:
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       REMOVE_BG_BASE_URL: "${REMOVE_BG_BASE_URL:-}"
       REMOVE_BG_API_URL: "${REMOVE_BG_API_URL:-}"
+      FLUX_RENDER_ENABLED: "${FLUX_RENDER_ENABLED:-false}"
+      FLUX_MODEL_ID: "${FLUX_MODEL_ID:-black-forest-labs/FLUX.2-klein-4B}"
+      FLUX_DEVICE: "${FLUX_DEVICE:-auto}"
+      FLUX_INFERENCE_STEPS: "${FLUX_INFERENCE_STEPS:-4}"
+      FLUX_DENOISING_STRENGTH: "${FLUX_DENOISING_STRENGTH:-0.38}"
     # Model nạp + warmup một lần khi khởi động; healthcheck khai trong Dockerfile.
     stop_grace_period: 10s
 

@@ -79,8 +79,11 @@ SEGMENTATION_MODEL_ID = str(_LOCAL_SAM2_DIR) if _LOCAL_SAM2_DIR.is_dir() else "f
 _LOCAL_GROUNDING_DINO_DIR = Path(__file__).resolve().parents[2] / "artifacts" / "grounding_dino_base"
 GROUNDING_DINO_MODEL_ID = str(_LOCAL_GROUNDING_DINO_DIR) if _LOCAL_GROUNDING_DINO_DIR.is_dir() else "IDEA-Research/grounding-dino-base"
 GROUNDING_DINO_SURFACE_PROMPT = "wall. floor. ceiling."
+GROUNDING_DINO_OBJECT_PROMPT = "plant. vase. bench. cabinet. table. desk. shelf. chair. sofa. window. door. chandelier."
 GROUNDING_DINO_BOX_THRESHOLD = 0.24
 GROUNDING_DINO_TEXT_THRESHOLD = 0.22
+GROUNDING_DINO_OBJECT_BOX_THRESHOLD = 0.25
+GROUNDING_DINO_OBJECT_TEXT_THRESHOLD = 0.22
 GROUNDING_DINO_MAX_BOXES_PER_SURFACE = 8
 GROUNDING_DINO_MAX_TOTAL_BOXES = 18
 GROUNDING_DINO_MIN_BOX_FRAC = {'wall': 0.025, 'floor': 0.012, 'ceiling': 0.009}
@@ -341,6 +344,9 @@ CATEGORY_TO_PLACEMENT_V815 = {
     'may chieu':'Máy chiếu',
     'may choi game':'Máy chơi game',
     'bon ngam chan':'Bồn ngâm chân',
+    'den dien, den sac':'Đèn điện/đèn sạc',
+    'den dien':'Đèn điện/đèn sạc',
+    'den thong minh':'Đèn điện/đèn sạc',
 }
 # product_type là chuỗi phía API xóa nền; chỉnh tại đây nếu backend dùng enum khác.
 # V8.28: Không có tham số product_type cho remove-background.
@@ -1053,19 +1059,19 @@ def resolve_product_profile(group_name, product=None):
 CATEGORY_SIZE_PRIORS_CM = {'TV': (115, 68, 9),
  'Loa karaoke': (36, 73, 38),
  'Loa': (22, 36, 23),
- 'Quạt trần': (120, 22, 120),
+ 'Quạt trần': (130, 44, 130),
  'Máy điều hòa': (95, 31, 23),
- 'Máy lọc không khí': (30, 65, 30),
+ 'Máy lọc không khí': (27, 46, 27),
  'Máy hút bụi': (27, 110, 25),
  'Robot hút bụi': (35, 10, 35),
  'Bóng đèn LED': (12, 12, 12),
  'Ghế massage': (85, 115, 125),
  'Microphone': (6, 23, 6),
- 'Máy chiếu': (32, 13, 28),
+ 'Máy chiếu': (24, 24, 20),
  'Máy chơi game': (31, 12, 25),
  'Camera trong nhà': (11, 15, 11),
- 'Quạt điều hòa': (39, 92, 36),
- 'Quạt điện': (45, 115, 45)}
+ 'Quạt điều hòa': (36, 82, 34),
+ 'Quạt điện': (40, 98, 40)}
 
 # ===== CELL 55 =====
 CATEGORY_SIZE_PRIORS_CM.update({'Máy hút ẩm': (32, 56, 25),
@@ -1417,8 +1423,8 @@ NINE_CATEGORY_RULEBOOK_V7 = {
               'không chắn lối đi/cửa'],
         soft=['gần TV', 'ưu tiên hai bên khu giải trí']),
     'Quạt trần': dict(surface='ceiling', mount_type='ceiling_hanging',
-        spatial_rule='ceiling_clear_of_fixtures', clearance_ratio=0.060,
-        aspect_ratio_bounds=(1.40, 7.0), min_ceiling_coverage=0.80,
+        spatial_rule='ceiling_clear_of_fixtures', clearance_ratio=0.018,
+        aspect_ratio_bounds=(1.40, 7.0), min_ceiling_coverage=0.68,
         hard=['chỉ trần', 'ít nhất 80% khung hình chiếu ở trần',
               'không chồng đèn/quạt/cửa sổ'],
         soft=['tâm vùng trần khả dụng', 'xa đèn treo']),
@@ -1440,26 +1446,37 @@ NINE_CATEGORY_RULEBOOK_V7 = {
 # Subtypes have different supports and silhouette dimensions. Values are PRIOR estimates.
 V7_SPEAKER_TYPES = {
     'bookshelf': {'mount_type':'table_top', 'surface':'table',
-                  'size_cm':{'width':22.,'height':35.,'depth':24.},
-                  'aspect_ratio_bounds':(0.40,1.70)},
+                  'size_cm':{'width':22.,'height':34.,'depth':24.},
+                  'aspect_ratio_bounds':(0.40,1.85)},
+    'portable': {'mount_type':'table_top', 'surface':'table',
+                 'size_cm':{'width':24.,'height':14.,'depth':12.},
+                 'aspect_ratio_bounds':(0.45,2.95)},
+    'boombox': {'mount_type':'floor_standing', 'surface':'floor',
+                'size_cm':{'width':46.,'height':29.,'depth':24.},
+                'aspect_ratio_bounds':(0.75,2.25)},
     'soundbar': {'mount_type':'table_top', 'surface':'table',
                  'size_cm':{'width':90.,'height':10.,'depth':14.},
                  'aspect_ratio_bounds':(3.0,12.0)},
     'floorstanding': {'mount_type':'floor_standing', 'surface':'floor',
-                      'size_cm':{'width':32.,'height':110.,'depth':36.},
-                      'aspect_ratio_bounds':(0.25,1.0)},
+                      'size_cm':{'width':34.,'height':88.,'depth':36.},
+                      'aspect_ratio_bounds':(0.25,1.15)},
 }
 
 def v7_classify_speaker(product_name, karaoke=False):
     name=_normalized_product_label(product_name)
     if any(k in name for k in ('soundbar','loa thanh','loa dang thanh')):
         return 'soundbar'
-    if any(k in name for k in ('loa dung','floorstanding','tower speaker','loa cot')):
+    if any(k in name for k in ('xach tay','on the go','boombox')):
+        return 'boombox'
+    if any(k in name for k in ('loa dung','floorstanding','tower speaker','loa cot',
+                               'loa keo','loa thap','loa dien','party')):
         return 'floorstanding'
     if karaoke:
         if any(k in name for k in ('mini','de ban','desktop')):
-            return 'bookshelf'
+            return 'portable'
         return 'floorstanding'
+    if any(k in name for k in ('bluetooth','di dong','mini','beats pill','jbl go','jbl flip','soundcore','earfun','emberton')):
+        return 'portable'
     return 'bookshelf'
 
 _resolve_product_profile_v6 = resolve_product_profile
@@ -1479,6 +1496,9 @@ def resolve_product_profile(group_name, product=None):
     profile['rulebook_version']='V7.1'
     # If a SKU's dimensions are manufacturer-supplied, never overwrite them.
     verified=profile.get('size_source')=='sku_verified_input'
+    if group_name == 'Quạt trần' and not verified:
+        profile['size_cm'] = {'width': 136., 'height': 44., 'depth': 136.}
+        profile['size_source'] = 'v7_ceiling_fan_downrod_prior'
     if group_name in ('Loa','Loa karaoke'):
         subtype=v7_classify_speaker(profile['product_name'],karaoke=group_name=='Loa karaoke')
         profile['speaker_type']=subtype
@@ -1597,20 +1617,69 @@ def apply_api_sku_surface_metadata(group,product):
             'size_cm':{'width':35.,'height':10.,'depth':35.},
             'size_source':'sku_subtype_prior_estimate',
         }
+    elif group=='Máy chiếu':
+        if any(k in name for k in ('epson','benq','viewsonic','optoma','panasonic','nec')):
+            sz={'width':31.,'height':12.,'depth':24.}
+        else:
+            sz={'width':22.,'height':24.,'depth':19.}
+        PRODUCT_PLACEMENT_OVERRIDES[pid]={
+            'mount_type':'table_top','surface':'table','surface_options':['table'],
+            'size_cm':sz,'size_source':'sku_subtype_prior_estimate',
+        }
+    elif group=='Máy chơi game':
+        if any(k in name for k in ('playstation 5','ps5','xbox series x')):
+            sz={'width':26.,'height':36.,'depth':22.}
+        else:
+            sz={'width':24.,'height':14.,'depth':12.}
+        PRODUCT_PLACEMENT_OVERRIDES[pid]={
+            'mount_type':'table_top','surface':'table','surface_options':['table'],
+            'size_cm':sz,'size_source':'sku_subtype_prior_estimate',
+        }
+    elif group=='Đèn điện/đèn sạc':
+        if any(k in name for k in ('den cay','den dung','floor lamp')):
+            kind,sz='floor_standing',{'width':34.,'height':145.,'depth':34.}
+        elif any(k in name for k in ('den ban','den ngu','desk lamp')):
+            kind,sz='table_top',{'width':24.,'height':38.,'depth':20.}
+        else:
+            return
+        PRODUCT_PLACEMENT_OVERRIDES[pid]={
+            'mount_type':kind,'surface':MOUNT_TO_SURFACE[kind],
+            'surface_options':[MOUNT_TO_SURFACE[kind]],
+            'size_cm':sz,'size_source':'sku_subtype_prior_estimate',
+        }
 
 _v814_product_placement_restriction = api_product_placement_restriction
 def api_product_placement_restriction(group,product):
     reason=_v814_product_placement_restriction(group,product)
     if reason:return reason
+    title=_fold_vi(product.get('product_name',''))
     if group=='Quạt điện':
-        name=_fold_vi(product.get('product_name',''))
-        if not any(k in name for k in (
+        if not any(k in title for k in (
             'quat ban','quat mini','quat dung','quat cay','quat hop','quat treo tuong')):
             return 'Chưa nhận ra subtype quạt; không xác định được sàn/bàn/tường.'
+    if group=='Máy điều hòa':
+        if any(k in title for k in (
+            'am tran','giau tran','ap tran','noi ong gio','cuc nong','dan nong','multi','tu dung','di dong')):
+            return 'SKU không phải dàn lạnh treo tường 1 khối (âm trần/áp trần/tủ đứng/ống gió).'
+    if group in ('Loa','Loa karaoke'):
+        if any(k in title for k in ('bo loa thanh','dan am thanh','loa sieu tram')):
+            return 'SKU là bộ nhiều cục loa rời chụp tách lớp hoặc loa siêu trầm phụ, không ghép đơn lẻ.'
+        if any(k in title for k in ('jbl clip','jbl go','bo tui','deo hong')):
+            return 'SKU là loa móc khóa/bỏ túi siêu nhỏ, không phù hợp đặt nội thất phòng.'
     if group=='Máy chiếu':
-        title=_fold_vi(product.get('product_name',''))
         if 'may chieu' not in title:
             return 'SKU không phải thân máy chiếu; cần placement riêng.'
+    if group=='Máy chơi game':
+        if 'may choi game' not in title:
+            return 'SKU là tay cầm/phụ kiện rời, chỉ ghép thân máy chơi game console.'
+    if group=='Đèn điện/đèn sạc':
+        if any(k in title for k in (
+            'den pin','doi dau','bat muoi','treo man hinh','monitor light','doc sach','reading light','nang luong mat troi')):
+            return 'SKU là đèn cầm tay/bắt muỗi/kẹp màn hình, không phải đèn nội thất đặt bàn/sàn.'
+        if not any(k in title for k in ('den ban','den ngu','den cay','den dung','den chum','desk lamp','floor lamp')):
+            return 'Chưa xác định được kiểu lắp đặt đèn nội thất (bàn/sàn/trần).'
+    if group=='Đèn năng lượng mặt trời':
+        return 'Đèn năng lượng mặt trời/đèn ngoại thất không gắn lên tường nội thất trong nhà.'
     return None
 
 # ===== CELL 73 =====
@@ -1791,6 +1860,123 @@ def locate_surface_boxes_grounding_dino(img, model_id=GROUNDING_DINO_MODEL_ID, d
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
+def locate_scene_objects_grounding_dino(img, model_id=GROUNDING_DINO_MODEL_ID, device_name=None):
+    """Zero-shot phát hiện vật cản nội thất & mặt kệ/bàn từ Grounding DINO Base."""
+    if not isinstance(img, Image.Image):
+        img = Image.fromarray(np.asarray(img)).convert('RGB')
+    else:
+        img = img.convert('RGB')
+    H, W = img.height, img.width
+    device_name = device_name or ('cuda' if torch.cuda.is_available() else 'cpu')
+    processor, model = _grounding_dino_load(model_id, device_name)
+    try:
+        batch = processor(images=img, text=GROUNDING_DINO_OBJECT_PROMPT, return_tensors='pt')
+        inputs = {k: (v.to(device_name) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
+        with torch.inference_mode():
+            output = model(**inputs)
+        rows = processor.post_process_grounded_object_detection(
+            output, input_ids=inputs.get('input_ids'),
+            threshold=float(GROUNDING_DINO_OBJECT_BOX_THRESHOLD),
+            text_threshold=float(GROUNDING_DINO_OBJECT_TEXT_THRESHOLD),
+            target_sizes=[(H, W)],
+        )
+        if len(rows) != 1:
+            return []
+        row = rows[0]
+        labels = row.get('text_labels', row.get('labels', []))
+        boxes = row['boxes']
+        scores = row['scores']
+        raw_items = []
+        for box, score, label in zip(boxes, scores, labels):
+            raw = box.detach().cpu().numpy() if hasattr(box, 'detach') else np.asarray(box)
+            if raw.shape != (4,) or not np.isfinite(raw).all():
+                continue
+            x1, y1, x2, y2 = map(float, raw)
+            x1, x2 = float(np.clip(x1, 0, W)), float(np.clip(x2, 0, W))
+            y1, y2 = float(np.clip(y1, 0, H)), float(np.clip(y2, 0, H))
+            bw, bh = x2 - x1, y2 - y1
+            if bw < 6 or bh < 6:
+                continue
+            frac = (bw * bh) / float(max(1, W * H))
+            if not (0.0012 <= frac <= 0.52):
+                continue
+            # Bỏ dải watermark sát đáy ảnh
+            if y1 >= 0.90 * H or (y2 >= 0.96 * H and bh <= 0.065 * H):
+                continue
+            val = float(score.item() if hasattr(score, 'item') else score)
+            if not np.isfinite(val):
+                continue
+            txt = str(label or '').strip().casefold()
+            canon = None
+            subkind = None
+            if 'chandelier' in txt:
+                canon = 'Chandelier'
+            elif 'window' in txt:
+                canon = 'Window'
+            elif 'door' in txt:
+                canon = 'Door'
+            elif 'plant' in txt:
+                canon = 'Plant'
+            elif 'vase' in txt:
+                canon = 'Vase'
+            elif 'sofa' in txt:
+                canon = 'Sofa'
+            elif 'shelf' in txt:
+                canon = 'Shelf'
+            elif any(k in txt for k in ('bench', 'table', 'desk', 'cabinet')):
+                if (bw >= 0.25 * W and bh <= 0.20 * H and
+                        0.48 * H <= y1 <= 0.88 * H and bw / max(1.0, bh) >= 2.6):
+                    canon = 'Cabinet'
+                    subkind = 'low_wall_console'
+                elif 'bench' in txt and 'table' not in txt and 'desk' not in txt:
+                    canon = 'Chair'
+                elif bw < 0.11 * W:
+                    canon = 'Side Table'
+                    subkind = 'narrow_stand'
+                elif 'cabinet' in txt:
+                    canon = 'Cabinet'
+                elif 'table' in txt:
+                    canon = 'Table'
+                else:
+                    canon = 'Desk'
+            elif 'chair' in txt:
+                canon = 'Chair'
+            if canon is None:
+                continue
+            raw_items.append({
+                'label': canon,
+                'confidence': val,
+                'bbox': [x1, y1, x2, y2],
+                'subkind': subkind,
+                'no_scale_reference': True,
+                'source': 'grounding_dino_scene',
+            })
+        raw_items.sort(key=lambda d: (1 if d.get('subkind') == 'low_wall_console' else 0, d['confidence']), reverse=True)
+        furniture_group = {'Table', 'Desk', 'Cabinet', 'Side Table', 'Chair', 'Sofa'}
+        selected = []
+        for item in raw_items:
+            dup = False
+            for prev in selected:
+                iou = _rf_bbox_iou(item['bbox'], prev['bbox'])
+                if item['label'] == prev['label'] and iou > 0.72:
+                    dup = True
+                    break
+                if item['label'] in furniture_group and prev['label'] in furniture_group and iou > 0.82:
+                    dup = True
+                    break
+            if not dup:
+                selected.append(item)
+            if len(selected) >= 24:
+                break
+        return selected
+    except Exception:
+        return []
+    finally:
+        if GROUNDING_DINO_OFFLOAD_TO_CPU and device_name.startswith('cuda'):
+            model.to('cpu')
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
 def _sam2_candidate_score(surface, mask, iou):
     """Giữ quy tắc đánh giá hình học của V8.24, không vẽ mask nhân tạo."""
     H, W = mask.shape
@@ -1892,14 +2078,42 @@ def segment_room_surfaces(img, model_id=SEGMENTATION_MODEL_ID, device_name=None,
         H, W = img.height, img.width
         device_name = device_name or ('cuda' if torch.cuda.is_available() else 'cpu')
         grounded = locate_surface_boxes_grounding_dino(img, device_name=device_name)
-        _GROUNDING_DINO_LAST_RESULT = {'detections': grounded, 'status': 'ok'}
+        scene_objects = locate_scene_objects_grounding_dino(img, device_name=device_name)
+        _GROUNDING_DINO_LAST_RESULT = {'detections': grounded, 'scene_objects': scene_objects, 'status': 'ok'}
         if not grounded:
             return {}, {'status': 'unavailable', 'backend': 'grounding_dino_base_to_sam2_hiera_small',
                         'reason': 'Grounding DINO không phát hiện wall/floor/ceiling đáng tin cậy',
                         'prompt': GROUNDING_DINO_SURFACE_PROMPT, 'grounding_dino_boxes': []}
+        extra_scene_objects = []
+        for sobj in scene_objects:
+            if any(_rf_bbox_iou(sobj['bbox'], d['bbox']) > 0.55 for d in detections if d.get('bbox') and len(d['bbox']) == 4):
+                continue
+            extra_scene_objects.append(sobj)
         predictor = _sam2_load_predictor(model_id, device_name)
         with torch.inference_mode():
             predictor.set_image(np.asarray(img))
+            # Fallback suy luận hệ kệ TV âm tường thấp nếu có hộp tường chính dừng trên ranh sàn
+            if not any(o.get('subkind') == 'low_wall_console' for o in extra_scene_objects):
+                floor_boxes = [r['bbox'] for r in grounded if r['surface'] == 'floor']
+                wall_boxes = [r['bbox'] for r in grounded if r['surface'] == 'wall'
+                              and 0.30 * W <= (r['bbox'][2] - r['bbox'][0]) <= 0.85 * W
+                              and 0.55 * H <= r['bbox'][3] <= 0.86 * H]
+                if floor_boxes and wall_boxes:
+                    fy1 = min(fb[1] for fb in floor_boxes)
+                    for wb in wall_boxes:
+                        if 0.045 * H <= (fy1 - wb[3]) <= 0.18 * H:
+                            cand_box = [wb[0], wb[3], wb[2], fy1]
+                            cmask = _sam2_predict_best_box_mask(predictor, cand_box, (H, W), min_iou=0.58)
+                            if cmask is not None and int(cmask.sum()) >= int(0.45 * (wb[2] - wb[0]) * (fy1 - wb[3])):
+                                extra_scene_objects.append({
+                                    'label': 'Cabinet',
+                                    'confidence': 0.65,
+                                    'bbox': [float(v) for v in cand_box],
+                                    'subkind': 'low_wall_console',
+                                    'no_scale_reference': True,
+                                    'source': 'grounding_dino_wall_floor_console',
+                                })
+                                break
             proposals = {s: [] for s in ('wall', 'floor', 'ceiling')}
             for row in grounded:
                 proposals[row['surface']].extend(
@@ -1912,7 +2126,8 @@ def segment_room_surfaces(img, model_id=SEGMENTATION_MODEL_ID, device_name=None,
                      ('wall', 'floor', 'ceiling', 'table', 'window', 'door', 'stairs',
                       'fireplace', 'light_fixture')}
             masked_objects = 0
-            for obj in detections[:int(SAM_MAX_BOX_PROMPTS)] + list(SAM_MANUAL_OBSTACLES):
+            combined_objects = detections[:int(SAM_MAX_BOX_PROMPTS)] + extra_scene_objects[:int(SAM_MAX_BOX_PROMPTS)] + list(SAM_MANUAL_OBSTACLES)
+            for obj in combined_objects:
                 box = obj.get('bbox')
                 if not box:
                     continue
@@ -1920,8 +2135,13 @@ def segment_room_surfaces(img, model_id=SEGMENTATION_MODEL_ID, device_name=None,
                 if m is None:
                     continue
                 label = str(obj.get('coco_label') or obj.get('label') or '').casefold()
-                if label in ('dining table', 'table', 'desk'):
+                subkind = obj.get('subkind')
+                if subkind == 'low_wall_console':
                     masks['table'] |= m
+                    objects_mask |= m
+                elif label in ('dining table', 'table', 'desk') and subkind != 'narrow_stand':
+                    masks['table'] |= m
+                    objects_mask |= m
                 else:
                     objects_mask |= m
                 obstacle = _sam2_obstacle_kind(obj.get('label'))
@@ -1930,14 +2150,27 @@ def segment_room_surfaces(img, model_id=SEGMENTATION_MODEL_ID, device_name=None,
                 masked_objects += 1
         chosen = {}
         assigned = np.zeros((H, W), dtype=bool)
+        grounding_wall_boxes = []
         for surface in ('floor', 'ceiling', 'wall'):
+            has_clean_wall = False
             for score, mask, box_record, quality in proposals[surface]:
+                bx1, by1, bx2, by2 = box_record['bbox']
+                if surface == 'wall' and has_clean_wall and (bx2 - bx1) > 0.82 * W and float(quality) < 0.76:
+                    continue
                 available = mask & ~assigned & ~masks[surface] & ~objects_mask
                 if int(available.sum()) < max(8, int(SAM_MIN_AREA[surface] * W * H * 0.60)):
                     continue
-                if surface != 'wall' and masks[surface].any():
+                if surface != 'wall' and masks[surface].any() and float(quality) < 0.70:
                     continue
                 masks[surface] |= available
+                if surface == 'wall' and float(quality) >= 0.80 and int(masks['wall'].sum()) >= int(0.08 * W * H):
+                    has_clean_wall = True
+                if surface == 'wall' and float(quality) >= 0.78 and (bx2 - bx1) <= 0.85 * W:
+                    grounding_wall_boxes.append({
+                        'bbox': list(box_record['bbox']),
+                        'confidence': float(box_record['confidence']),
+                        'sam_iou': float(quality),
+                    })
                 chosen.setdefault(surface, []).append({
                     'grounding_box_px': box_record['bbox'],
                     'grounding_confidence': round(float(box_record['confidence']), 3),
@@ -1947,9 +2180,11 @@ def segment_room_surfaces(img, model_id=SEGMENTATION_MODEL_ID, device_name=None,
                 })
             assigned |= masks[surface]
         masks['wall'] &= ~objects_mask
+        masks['floor'] &= ~objects_mask
         for obs in ('window', 'door', 'stairs', 'fireplace', 'light_fixture'):
             masks['wall'] &= ~masks[obs]
-        counts = {s: int(m.sum()) for s, m in masks.items()}
+        masks['_grounding_wall_boxes'] = grounding_wall_boxes
+        counts = {s: int(m.sum()) for s, m in masks.items() if isinstance(m, np.ndarray)}
         has_surface = any(counts[k] >= SAM_MIN_AREA[k] * W * H * 0.60 for k in ('wall', 'floor'))
         meta = {
             'status': 'ok' if has_surface else 'unavailable',
@@ -1958,6 +2193,7 @@ def segment_room_surfaces(img, model_id=SEGMENTATION_MODEL_ID, device_name=None,
             'sam2_model_id': model_id, 'device': device_name,
             'prompt': GROUNDING_DINO_SURFACE_PROMPT,
             'grounding_dino_boxes': grounded,
+            'grounding_scene_objects': extra_scene_objects,
             'grounding_dino_counts': {s: sum(x['surface'] == s for x in grounded)
                                      for s in ('wall', 'floor', 'ceiling')},
             'pixels_per_surface': counts,
@@ -2011,7 +2247,7 @@ def _wall_column_edges(mask):
     bottom=np.where(valid,H-1-np.argmax(arr[::-1,:],axis=0),np.nan).astype(float)
     def smooth(v):
         known=np.isfinite(v)
-        if known.sum()<max(12,int(.32*W)):
+        if known.sum()<max(10,int(.16*W)):
             return None
         interp=np.interp(np.arange(W),np.where(known)[0],v[known])
         span=max(3,int(round(.025*W)) | 1)
@@ -2085,7 +2321,16 @@ def infer_wall_plane_masks(image,masks,policy=None):
                 fit['edge_amplitude']>=cfg['min_side_change_wall_height_fraction']*H):
                 accepted.append((source,fit))
         if not accepted:continue
-        # A single boundary can suffice when the other is occluded/poorly segmented.
+        # Only accept a single-boundary corner if the opposite boundary also shows
+        # a genuine slope (>0.018*H), avoiding furniture/sunlight indentations on one edge.
+        if len(accepted)==1:
+            other_fit=fit_bottom if accepted[0][0]=='ceiling_wall' else fit_top
+            if (not other_fit or
+                    other_fit.get('edge_amplitude',0)<0.025*H or
+                    other_fit.get('improvement',0)<0.22 or
+                    fit_top['slope']*fit_bottom['slope']>=0 or
+                    abs(fit_top['x']-fit_bottom['x'])>0.12*W):
+                continue
         ktop=fit_top['x'] if fit_top and ('ceiling_wall',fit_top) in accepted else None
         kbottom=fit_bottom['x'] if fit_bottom and ('wall_floor',fit_bottom) in accepted else None
         if ktop is None:ktop=kbottom
@@ -2227,6 +2472,10 @@ def _v87_detect_visual_corner(image, masks, side, cfg=None):
                             maxLineGap=max(10, int(0.065 * H)))
     frac = cfg['left_roi_fraction'] if side == 'left' else cfg['right_roi_fraction']
     xlo, xhi = int(frac[0] * W), int(frac[1] * W)
+    if side == 'left':
+        wall_cols = np.flatnonzero(wall.sum(axis=0) >= max(10, int(0.12 * H)))
+        if len(wall_cols):
+            xlo = min(xlo, max(8, int(np.quantile(wall_cols, 0.04))))
     verticals = []
     if lines is not None:
         for x1, y1, x2, y2 in lines.reshape(-1, 4):
@@ -2236,6 +2485,32 @@ def _v87_detect_visual_corner(image, masks, side, cfg=None):
             xmid = 0.5 * (int(x1) + int(x2))
             if xlo <= xmid <= xhi:
                 verticals.append((xmid, dy))
+    # Also detect strong vertical step edges (e.g. wood-slat column or panel seam)
+    # where fine texture lines may fragment Canny+Hough segments.
+    ylo_s = max(0, int(cfg['scan_y_fraction'][0] * H))
+    yhi_s = min(H, int(cfg['scan_y_fraction'][1] * H))
+    g_edges = []
+    for wb in masks.get('_grounding_wall_boxes', []) or []:
+        if float(wb.get('sam_iou', 0.0)) < 0.80:
+            continue
+        bx1, _, bx2, _ = wb['bbox']
+        gx = float(bx1 if side == 'left' else bx2)
+        if xlo <= gx <= xhi:
+            g_edges.append(gx)
+    if yhi_s - ylo_s >= 25:
+        sobel_x = np.abs(cv2.Sobel(gray[ylo_s:yhi_s], cv2.CV_32F, 1, 0, ksize=3))
+        col_strength = sobel_x.mean(axis=0)
+        med_s = float(np.median(col_strength))
+        std_s = float(np.std(col_strength)) + 1e-5
+        for xm in range(max(4, xlo), min(W - 4, xhi)):
+            if col_strength[xm] >= med_s + 1.5 * std_s and col_strength[xm] >= col_strength[xm - 1] and col_strength[xm] >= col_strength[xm + 1]:
+                strong_rows = int((sobel_x[:, xm] >= med_s + 1.0 * std_s).sum())
+                if strong_rows >= int(0.28 * (yhi_s - ylo_s)):
+                    verticals.append((float(xm), strong_rows))
+            elif g_edges and any(abs(xm - gx) <= max(5, int(0.015 * W)) for gx in g_edges):
+                if col_strength[xm] >= med_s + 0.55 * std_s and col_strength[xm] >= col_strength[xm - 1] and col_strength[xm] >= col_strength[xm + 1]:
+                    strong_rows = max(int(0.32 * (yhi_s - ylo_s)), int((sobel_x[:, xm] >= med_s + 0.35 * std_s).sum()))
+                    verticals.append((float(xm), strong_rows))
     if not verticals:
         return None
     ylo = max(0, int(cfg['scan_y_fraction'][0] * H))
@@ -2273,9 +2548,12 @@ def _v87_detect_visual_corner(image, masks, side, cfg=None):
         differences = np.linalg.norm(left_lab - right_lab, axis=1)[paired]
         color_step = float(np.percentile(differences, 55))
         coherence = float((differences >= cfg['strong_contrast_lab_step']).mean())
-        if (color_step < cfg['min_lab_appearance_step'] or
-                coherence < cfg['min_strong_contrast_row_fraction']):
-            continue
+        near_grounding_seam = any(abs(gx - x) <= max(7, int(0.022 * W)) for gx in g_edges)
+        line_support = min(1.0, max(near_lines) / max(1.0, 0.42 * H))
+        if not (near_grounding_seam and line_support >= 0.30 and color_step >= 2.0):
+            if (color_step < cfg['min_lab_appearance_step'] or
+                    coherence < cfg['min_strong_contrast_row_fraction']):
+                continue
         # Side-specific continuity: the interior (the main/front wall) should
         # remain a large uninterrupted wall region, unlike the inside of a window.
         reach = max(12, int(0.14 * W))
@@ -2288,11 +2566,13 @@ def _v87_detect_visual_corner(image, masks, side, cfg=None):
         continuity = float(support[ylo:yhi, a:b].mean())
         if continuity < cfg['min_side_wall_continuity']:
             continue
-        line_support = min(1.0, max(near_lines) / max(1.0, 0.42 * H))
         coverage_support = min(1.0, paired_count / max(1.0, 0.45 * (yhi - ylo)))
         score = (color_step * (0.25 + 0.75 * coherence) *
                  (0.60 + 0.40 * line_support) * coverage_support *
                  (0.65 + 0.35 * continuity))
+        if near_grounding_seam and line_support >= 0.30 and color_step >= 2.0:
+            geom_score = (21.5 + 6.5 * line_support + 4.5 * continuity) * max(0.85, coverage_support)
+            score = max(score, geom_score)
         if score >= cfg['minimum_corner_score']:
             tested.append((score, x, color_step, coherence,
                            continuity, paired_count, line_support))
@@ -2688,12 +2968,39 @@ def _bbox_overlaps_yolo(bbox, detections, margin=0):
 
 SUPPORT_DETECTOR_LABELS={'Shelf','Cabinet','Table','Side Table','Desk'}
 
+def _is_valid_tabletop_support_box(obj, image_size=None):
+    """Chỉ chấp nhận mặt bàn/kệ thấp nằm ngang ở nửa dưới ảnh làm mặt đỡ đặt đồ.
+    Loại trừ tủ sách cao âm tường (vertical Shelf/Cabinet), đôn cây cảnh hẹp (narrow_stand),
+    hoặc kệ treo sát trần."""
+    if obj.get('label') not in SUPPORT_DETECTOR_LABELS:
+        return False
+    if obj.get('subkind') == 'narrow_stand':
+        return False
+    bbox = obj.get('bbox')
+    if not bbox or len(bbox) != 4:
+        return False
+    x1, y1, x2, y2 = map(float, bbox)
+    bw_obj = x2 - x1
+    bh_obj = y2 - y1
+    if bw_obj <= 4 or bh_obj <= 4:
+        return False
+    if bh_obj > 1.15 * bw_obj:
+        return False
+    if obj.get('label') == 'Shelf' and bw_obj < 1.55 * bh_obj:
+        return False
+    if image_size is not None:
+        W, H = map(float, image_size)
+        if y1 < 0.45 * H or bw_obj < max(26.0, 0.08 * W):
+            return False
+    return True
+
 def _inferred_support_from_yolo(detections, image_size):
     """Unverified top-of-shelf/cabinet bands from YOLO bbox, not a real tabletop mask."""
     W,H=map(int,image_size)
     mask=np.zeros((H,W),dtype=bool)
     for obj in detections:
-        if obj.get('label') not in SUPPORT_DETECTOR_LABELS:continue
+        if not _is_valid_tabletop_support_box(obj, (W, H)):
+            continue
         x1,y1,x2,y2=map(int,obj['bbox'])
         x1=max(0,x1);x2=min(W,x2);y1=max(0,y1)
         if x1>=x2 or y1>=H:continue
@@ -2706,16 +3013,25 @@ def _inferred_support_from_yolo(detections, image_size):
 def _collision_with_yolo_excluding_support(bbox,detections,surface,margin=0):
     """Never let a proposed bbox intersect ANY detected/reserved object.
 
-    A tabletop speaker may touch the top edge of its supporting table but must
-    not enter the detected table bounding box. Clearance margin applies to
-    non-supporting objects; contact with a table/shelf has zero overlap tolerance.
+    A tabletop object may rest on the upper perspective plane of its supporting
+    table/cabinet; a foreground floor-standing object may stand clearly in front
+    of a background low wall console without colliding with its base.
     """
     x1,y1,x2,y2=map(float,bbox)
     for obj in detections:
         if not obj.get('bbox') or len(obj['bbox'])!=4:continue
         a,b,c,d=map(float,obj['bbox'])
-        support=(surface=='table' and obj.get('label') in SUPPORT_DETECTOR_LABELS)
-        effective_margin=0.0 if support else float(max(0,margin))
+        is_reserved=str(obj.get('label','')).startswith(('Đã ghép:','Đề xuất:')) or bool(obj.get('is_reserved'))
+        if not is_reserved and surface=='table' and _is_valid_tabletop_support_box(obj):
+            b_inner=min(d, b + max(10.0, 0.24 * (d - b)))
+            if x1<c and x2>a and y1<d and y2>b_inner:
+                return True
+            continue
+        if not is_reserved and surface=='floor' and obj.get('subkind')=='low_wall_console':
+            if x1<c and x2>a and y2 < d + max(8.0, 0.20 * (d - b)):
+                return True
+            continue
+        effective_margin=float(max(0,margin))
         if (x1<c+effective_margin and x2>a-effective_margin and
             y1<d+effective_margin and y2>b-effective_margin):
             return True
@@ -2763,11 +3079,19 @@ def _valid_support(mask, surface, bbox, support_band):
         return False
     if surface in ('floor', 'table'):
         ya, yb = y2, min(H, y2 + support_band)
+        if ya >= yb or float(mask[ya:yb, xa:xb].mean()) < 0.88:
+            return False
+        if surface == 'floor':
+            foot_h = max(3, int(round(min((y2 - y1) * 0.22, H * 0.045))))
+            fya = max(0, y2 - foot_h)
+            if fya < y2 and float(mask[fya:y2, xa:xb].mean()) < 0.82:
+                return False
+        return True
     else:  # ceiling: contact above proposed hanging object
         ya, yb = max(0, y1 - support_band), y1
-    if ya >= yb:
-        return False
-    return float(mask[ya:yb, xa:xb].mean()) >= 0.88
+        if ya >= yb:
+            return False
+        return float(mask[ya:yb, xa:xb].mean()) >= 0.88
 
 # ===== CELL 97 =====
 def _surface_relation_at(mask, surface, point):
@@ -2986,8 +3310,9 @@ def _strict_candidate_validity(profile, masks, image_size, x1,y1,x2,y2):
                                        for v in (x1,y1,x2,y2)])
     valid=np.ones(x1.shape,dtype=bool)
     if min(W,H)<=0:return valid & False
+    surface=profile.get('surface','floor')
     minx=int(round(W*STRICT_PLACEMENT_POLICY['edge_x_ratio']))
-    miny=int(round(H*STRICT_PLACEMENT_POLICY['edge_y_ratio']))
+    miny=max(2, int(round(H*0.008))) if surface=='ceiling' else int(round(H*STRICT_PLACEMENT_POLICY['edge_y_ratio']))
     valid &= (x1>=minx)&(x2<=W-minx)&(y1>=miny)&(y2<=H-miny)
     xa=np.clip(np.floor(x1).astype(int),0,W)
     xb=np.clip(np.ceil(x2).astype(int),0,W)
@@ -2995,7 +3320,6 @@ def _strict_candidate_validity(profile, masks, image_size, x1,y1,x2,y2):
     yb=np.clip(np.ceil(y2).astype(int),0,H)
     valid &= (xb>xa)&(yb>ya)
     area=np.maximum(1,(xb-xa)*(yb-ya))
-    surface=profile.get('surface','floor')
     label=_normalized_product_label(profile.get('group_name',''))
     obs=_semantic_obstacle_masks(masks,(W,H))
     # Window/door/stairs are never considered a safe installation region.
@@ -3015,8 +3339,10 @@ def _strict_candidate_validity(profile, masks, image_size, x1,y1,x2,y2):
                                                 profile.get('product_name'))=='ceiling_fan':
         ceiling=np.asarray(masks.get('ceiling',np.zeros((H,W),dtype=bool)),bool)
         if ceiling.shape!=(H,W) or not ceiling.any(): return valid & False
-        ceiling_cover=_rect_counts(_integral(ceiling),xa,ya,xb,yb)/area
-        valid &= ceiling_cover>=STRICT_PLACEMENT_POLICY['ceiling_fan_min_mask_coverage']
+        yb_ceil=np.clip(np.maximum(ya+1,np.rint(y1+0.75*bh).astype(int)),0,H)
+        ceil_area=np.maximum(1,(xb-xa)*(yb_ceil-ya))
+        ceiling_cover=_rect_counts(_integral(ceiling),xa,ya,xb,yb_ceil)/ceil_area
+        valid &= ceiling_cover>=min(0.72, STRICT_PLACEMENT_POLICY['ceiling_fan_min_mask_coverage'])
         valid &= bw/bh>=STRICT_PLACEMENT_POLICY['ceiling_fan_min_width_height_ratio']
     if surface=='wall' and label=='tv':
         valid &= bw/bh>=STRICT_PLACEMENT_POLICY['wall_tv_min_width_height_ratio']
@@ -3068,12 +3394,15 @@ def _strict_candidate_validity(profile, masks, image_size, x1,y1,x2,y2):
         ceiling=np.asarray(masks.get('ceiling',[]),dtype=bool)
         if surface!='ceiling' or ceiling.shape!=(H,W) or not ceiling.any():
             return valid & False
+        ceil_col_h = ceiling.sum(axis=0)
+        if float(np.quantile(ceil_col_h, 0.80)) < max(28.0, 0.115 * H):
+            return valid & False
         xa=np.clip(np.floor(x1).astype(int),0,W)
         xb=np.clip(np.ceil(x2).astype(int),0,W)
         ya=np.clip(np.floor(y1).astype(int),0,H)
-        yb=np.clip(np.ceil(y2).astype(int),0,H)
-        fraction=_rect_counts(_integral(ceiling),xa,ya,xb,yb) / np.maximum(1,(xb-xa)*(yb-ya))
-        valid &= fraction >= profile.get('min_ceiling_coverage',0.80)
+        yb_ceil=np.clip(np.maximum(ya+1,np.rint(y1+0.72*bh).astype(int)),0,H)
+        fraction=_rect_counts(_integral(ceiling),xa,ya,xb,yb_ceil) / np.maximum(1,(xb-xa)*(yb_ceil-ya))
+        valid &= fraction >= profile.get('min_ceiling_coverage',0.72)
     if group in ('Máy lọc không khí','Ghế massage','Loa karaoke',
                  'Quạt điều hòa','Robot hút bụi') or (group=='Loa' and surface=='floor'):
         if surface=='floor':
@@ -3176,16 +3505,24 @@ def _choose_placement_region_fixed(profile, masks, detections, image_size,
                  _resize_bool_mask(inferred_support,(w,h)))
     occupied = np.zeros((h, w), dtype=bool)
     margin = max(1, round(min(h, w) * clear))  # SKU-specific 2D clearance
+    low_consoles_scaled = []
     for o in detections:
         bx1, by1, bx2, by2 = o['bbox']
-        a = max(0, int(np.floor(bx1 * w / W)) - margin)
-        b = min(w, int(np.ceil(bx2 * w / W)) + margin)
-        if surface=='table' and o.get('label') in SUPPORT_DETECTOR_LABELS:
-            by1 = min(by2, by1 + max(8, 0.18*(by2-by1)))
+        is_reserved = str(o.get('label', '')).startswith(('Đã ghép:', 'Đề xuất:')) or bool(o.get('is_reserved'))
+        if not is_reserved and surface == 'floor' and o.get('subkind') == 'low_wall_console':
+            low_consoles_scaled.append((
+                bx1 * w / W, by1 * h / H, bx2 * w / W, by2 * h / H
+            ))
+            continue
+        eff_margin = max(2, margin // 3) if (is_reserved and surface == 'floor') else margin
+        a = max(0, int(np.floor(bx1 * w / W)) - eff_margin)
+        b = min(w, int(np.ceil(bx2 * w / W)) + eff_margin)
+        if not is_reserved and surface=='table' and _is_valid_tabletop_support_box(o, (W, H)):
+            by1 = min(by2, by1 + max(8, 0.22*(by2-by1)))
             c = max(0, int(np.floor(by1 * h / H)))
         else:
-            c = max(0, int(np.floor(by1 * h / H)) - margin)
-        d = min(h, int(np.ceil(by2 * h / H)) + margin)
+            c = max(0, int(np.floor(by1 * h / H)) - eff_margin)
+        d = min(h, int(np.ceil(by2 * h / H)) + eff_margin)
         if a < b and c < d:
             occupied[c:d, a:b] = True
 
@@ -3233,14 +3570,30 @@ def _choose_placement_region_fixed(profile, masks, detections, image_size,
     # Every candidate must NOT overlap any YOLO detected object (2D projection).
     occ_sum = _integral(occupied)
     no_collision = _rect_counts(occ_sum, x1, y1, x2, y2) == 0
+    if low_consoles_scaled:
+        for cx1_s, cy1_s, cx2_s, cy2_s in low_consoles_scaled:
+            min_fg_y2 = cy2_s + max(5.0, 0.20 * (cy2_s - cy1_s), 0.028 * h)
+            no_collision &= ~((x1 < cx2_s) & (x2 > cx1_s) & (y2 < min_fg_y2))
     surface_sum = _integral(support)
     if surface == 'wall':
         coverage = _rect_counts(surface_sum, x1, y1, x2, y2) / float(bw * bh)
         surface_ok = coverage >= 0.98
+    elif surface == 'floor':
+        xa = x1 + max(1, bw // 6)
+        xb = x2 - max(1, bw // 6)
+        ya, yb = y2, np.minimum(h, y2 + band)
+        coverage = _rect_counts(surface_sum, xa, ya, xb, yb) / np.maximum(1, (xb - xa) * (yb - ya))
+        surface_ok = coverage >= 0.90
+        # Ensure the bottom base of a floor-standing object truly rests on the floor
+        # and does not straddle onto low cabinets/shelves above the floor seam.
+        foot_h = max(5, int(round(min(bh * 0.25, h * 0.038))))
+        fya = np.maximum(0, y2 - foot_h)
+        foot_cov = _rect_counts(surface_sum, xa, fya, xb, y2) / np.maximum(1, (xb - xa) * (y2 - fya))
+        surface_ok &= foot_cov >= 0.85
     else:
         xa = x1 + max(1, bw // 6)
         xb = x2 - max(1, bw // 6)
-        if surface in ('floor', 'table'):
+        if surface == 'table':
             ya, yb = y2, np.minimum(h, y2 + band)
         else:
             ya, yb = np.maximum(0, y1 - band), y1
@@ -3258,6 +3611,24 @@ def _choose_placement_region_fixed(profile, masks, detections, image_size,
                         not np.any(pre_strict_valid & strict_valid))
     basic_valid=pre_strict_valid & strict_valid
     valid = basic_valid & rel_hard
+    if surface == 'floor' and profile.get('mount_type') == 'floor_standing':
+        tv_boxes = [o['bbox'] for o in detections
+                    if any(k in str(o.get('label', '')) for k in ('TV', 'Television'))
+                    and o.get('bbox') and len(o['bbox']) == 4]
+        if tv_boxes:
+            tx1, ty1, tx2, ty2 = map(float, tv_boxes[0])
+            tx1_s, tx2_s = tx1 * w / W, tx2 * w / W
+            tw_s = max(1.0, tx2_s - tx1_s)
+            outside_tv = (x2 <= tx1_s + 0.04 * tw_s) | (x1 >= tx2_s - 0.04 * tw_s)
+            valid = valid & outside_tv
+    if surface == 'ceiling':
+        ac_boxes = [o['bbox'] for o in detections
+                    if any(k in str(o.get('label', '')) for k in ('Máy điều hòa', 'Air Conditioner'))
+                    and o.get('bbox') and len(o['bbox']) == 4]
+        for ax1, ay1, ax2, ay2 in ac_boxes:
+            ax1_s, ay1_s, ax2_s = ax1 * w / W, ay1 * h / H, ax2 * w / W
+            horiz_ov = (x1 < ax2_s + 0.08 * bw) & (x2 > ax1_s - 0.08 * bw)
+            valid &= ~(horiz_ov & (y2 > ay1_s - max(8.0, 0.035 * h)))
     blocked_by_relations=bool(np.any(basic_valid) and not np.any(valid))
     ceiling_gap=np.full(valid.shape,np.nan)
     ceiling_coverage=np.zeros(valid.shape)
@@ -3286,7 +3657,7 @@ def _choose_placement_region_fixed(profile, masks, detections, image_size,
     free_dist = distance[np.clip(ys, 0, h - 1), np.clip(xs, 0, w - 1)]
     free_score = np.minimum(1.0, free_dist / max(1, 0.14 * min(w, h)))
     # Prefer plausible vertical zones; still allow other zones if needed.
-    prefer_y = {'floor': 0.78, 'table': 0.52, 'wall': 0.42, 'ceiling': 0.18}[surface] * h
+    prefer_y = {'floor': 0.78, 'table': 0.68, 'wall': 0.42, 'ceiling': 0.16}[surface] * h
     vertical = np.exp(-np.abs(ys - prefer_y) / max(1., 0.35 * h))
     central = 1.0 - np.abs(xs - 0.5 * w) / max(0.5 * w, 1.0)
     # Main room center at near-floor pixels is often the circulation aisle;
@@ -3307,15 +3678,37 @@ def _choose_placement_region_fixed(profile, masks, detections, image_size,
     rx, ry = xs / max(w,1), ys / max(h,1)
     xpref = profile.get('preferred_x','any')
     ypref = profile.get('preferred_y','any')
+    # Prefer subtle edge placement near walls/corners (~0.20..0.32 or ~0.68..0.80)
+    # rather than slamming appliances into the extreme left/right borders of the photo.
+    edge_score = 1.0 - np.minimum(np.abs(rx - 0.24), np.abs(rx - 0.76)) / 0.24
+    edge_score = np.clip(edge_score, 0.0, 1.0)
     x_bonus = {'center':1.0-2.0*np.abs(rx-0.5),
                'left':1.0-rx, 'right':rx,
-               'edge':2.0*np.abs(rx-0.5),
+               'edge':edge_score,
                'any':np.full_like(rx,0.5,dtype=float)}.get(xpref)
-    y_bonus = {'top':1.0-ry,'middle':1.0-2.0*np.abs(ry-0.5),
-               'bottom':ry,
-               'any':np.full_like(ry,0.5,dtype=float)}.get(ypref)
+    if surface == 'floor' and profile.get('mount_type') == 'floor_standing':
+        # On a perspective floor plane, ry -> 1.0 is the foreground walkway near the camera,
+        # whereas ry ~ 0.77..0.80 is the natural floor perimeter along the back wall/cabinet.
+        floor_perim_y = np.exp(-np.abs(ry - 0.78) / 0.055)
+        y_bonus = {'top':1.0-ry, 'middle':1.0-2.0*np.abs(ry-0.5),
+                   'bottom':floor_perim_y,
+                   'any':floor_perim_y}.get(ypref)
+    else:
+        y_bonus = {'top':1.0-ry,'middle':1.0-2.0*np.abs(ry-0.5),
+                   'bottom':ry,
+                   'any':np.full_like(ry,0.5,dtype=float)}.get(ypref)
     if x_bonus is not None and y_bonus is not None:
         scores = 0.80*scores + 0.13*x_bonus + 0.07*y_bonus
+    if surface == 'floor' and profile.get('mount_type') == 'floor_standing':
+        scores += 0.28 * np.exp(-np.abs(ry - 0.78) / 0.055)
+    if surface == 'ceiling':
+        ceil_cx = 0.5 * w
+        fw_mask = strict_masks.get('wall_plane_front')
+        if isinstance(fw_mask, np.ndarray) and fw_mask.any():
+            fw_xs = np.where(fw_mask.any(axis=0))[0]
+            if fw_xs.size >= 8:
+                ceil_cx = 0.5 * float(np.quantile(fw_xs, 0.05) + np.quantile(fw_xs, 0.95))
+        scores += 0.65 * np.exp(-np.abs(xs - ceil_cx) / max(1.0, 0.14 * w))
     if anchor:
         ax1, ay1, ax2, ay2 = anchor['bbox']
         ax = (ax1 + ax2) * w / (2 * W)
@@ -3467,8 +3860,10 @@ KNOWN_REFERENCE_DIMENSIONS_CM={
 def _valid_yolo_reference_objects(detections):
     result=[]
     for d in detections:
+        if d.get('no_scale_reference'):
+            continue
         label=str(d.get('label',''))
-        if label.startswith('Đề xuất:') or label not in KNOWN_REFERENCE_DIMENSIONS_CM:
+        if label.startswith(('Đề xuất:','Đã ghép:')) or label not in KNOWN_REFERENCE_DIMENSIONS_CM:
             continue
         b=d.get('bbox')
         if not b or len(b)!=4:continue
@@ -3500,14 +3895,15 @@ def _relative_closeness(depth_map, x, y, image_size):
     return float(np.clip((np.median(local)-low)/(high-low),0,1))
 
 def _reference_pixel_per_cm(detections, image_size, surface, candidate_xy,
-                            depth_map=None):
+                            depth_map=None, masks=None):
     W,H=image_size
     refs=_valid_yolo_reference_objects(detections)
-    if not refs:return None,[],None
     candidate_closeness=_relative_closeness(depth_map,*candidate_xy,image_size)
     entries=[]
     for obj in refs:
         b=obj['bbox']; label=obj['label'];rw,rh=KNOWN_REFERENCE_DIMENSIONS_CM[label]
+        if label == 'Chair' and (b[2] - b[0]) > 1.05 * (b[3] - b[1]):
+            rw, rh = KNOWN_REFERENCE_DIMENSIONS_CM.get('Armchair', (78, 86))
         w=(b[2]-b[0])/rw;h=(b[3]-b[1])/rh
         # Only use plausible dimensions, robust to TV/wall or furniture occlusion.
         if min(w,h)<=0:continue
@@ -3527,6 +3923,55 @@ def _reference_pixel_per_cm(detections, image_size, surface, candidate_xy,
         weight=(0.1+confidence)/(0.1+depth_difference)
         entries.append({'label':label,'scale':scale*relative,'weight':weight,
                         'reference_bbox':b,'relative_factor':round(relative,3)})
+    # Add room-level vertical wall height calibration as a reliable metric prior
+    # so oblique/angled chairs or partial furniture do not inflate appliance sizes.
+    if isinstance(masks, dict):
+        wall_m = np.asarray(masks.get('wall_plane_front', []), bool)
+        if wall_m.shape != (H, W) or not wall_m.any():
+            wall_m = np.asarray(masks.get('wall', []), bool)
+        if wall_m.shape == (H, W) and wall_m.any():
+            try:
+                top_e, bot_e = _wall_column_edges(wall_m)
+                if (top_e is None or bot_e is None) and masks.get('wall') is not None:
+                    raw_wall_m = np.asarray(masks.get('wall', []), bool)
+                    if raw_wall_m.shape == (H, W) and raw_wall_m.any():
+                        top_e, bot_e = _wall_column_edges(raw_wall_m)
+                if top_e is not None and bot_e is not None:
+                    top_ref = float(np.median(top_e))
+                    bot_ref = float(np.median(bot_e))
+                    floor_m = np.asarray(masks.get('floor', []), bool)
+                    if floor_m.shape == (H, W) and floor_m.any():
+                        fl_low = floor_m.copy()
+                        fl_low[:int(0.30 * H)] = False
+                        w_cols = wall_m.sum(axis=0) >= max(8, int(0.12 * H))
+                        f_cols = fl_low.sum(axis=0) >= max(4, int(0.018 * H))
+                        both_cols = w_cols & f_cols
+                        if int(both_cols.sum()) >= max(8, int(0.12 * W)):
+                            first_fl = np.argmax(fl_low[:, both_cols], axis=0)
+                            bot_ref = max(bot_ref, float(np.median(first_fl)))
+                    wh_px = bot_ref - top_ref
+                    if wh_px >= 0.22 * H:
+                        wh_cm = float(globals().get('TV_WALL_GEOMETRY_V812', {}).get('measured_wall_height_cm') or
+                                      globals().get('TV_WALL_GEOMETRY_V812', {}).get('assumed_wall_height_cm', 265.0))
+                        wall_px_per_cm = wh_px / wh_cm
+                        wall_y = bot_ref
+                        if surface in ('floor', 'table'):
+                            # Mild perspective increase toward the foreground bottom of the image
+                            persp = float(np.clip(1.0 + 0.30 * (candidate_xy[1] - wall_y) / max(1.0, H - wall_y), 0.88, 1.20))
+                        else:
+                            persp = 1.0
+                        wall_scale = wall_px_per_cm * persp
+                        for ent in entries:
+                            ent['scale'] = float(np.clip(ent['scale'], 0.72 * wall_scale, 1.15 * wall_scale))
+                        entries.append({
+                            'label': 'RoomWallHeight',
+                            'scale': wall_scale,
+                            'weight': 12.0,
+                            'reference_bbox': [0, top_ref, W, wall_y],
+                            'relative_factor': round(persp, 3),
+                        })
+            except Exception:
+                pass
     if not entries:return None,[],candidate_closeness
     # Weighted median among known-size instances, not indiscriminate median.
     entries.sort(key=lambda o:o['scale'])
@@ -3544,13 +3989,20 @@ def estimate_product_bbox_size(profile, detections, image_size,
     W,H=map(int,image_size)
     surf=surface or profile.get('surface') or 'floor'
     if placement_point is None:placement_point=(0.5*W,0.60*H)
+    ctx_masks = _V84_MASK_CONTEXT.get((profile or {}).get('_v84_mask_context_key'))
+    if not isinstance(ctx_masks, dict) and _V84_MASK_CONTEXT:
+        ctx_masks = next(iter(_V84_MASK_CONTEXT.values()), None)
     px_per_cm, references, closeness=_reference_pixel_per_cm(
-        detections,(W,H),surf,placement_point,depth_map=depth_map)
+        detections,(W,H),surf,placement_point,depth_map=depth_map,masks=ctx_masks)
     dims=profile.get('size_cm')
     use_cm=isinstance(dims,dict) and all(isinstance(dims.get(k),(int,float)) and dims[k]>0
                                              for k in ('width','height','depth'))
     if use_cm and px_per_cm is not None:
-        estimated_w=px_per_cm*dims['width']
+        w_cm = float(dims['width'])
+        if surf == 'floor' and profile.get('mount_type') == 'floor_standing':
+            d_cm = float(dims.get('depth') or 0.0)
+            w_cm = min(1.32 * w_cm, max(w_cm, 0.88 * w_cm + 0.45 * d_cm))
+        estimated_w=px_per_cm*w_cm
         estimated_h=px_per_cm*dims['height']
         method='known_category_reference_at_candidate_depth'
     else:
@@ -3921,7 +4373,7 @@ def choose_placement_region(profile,masks,detections,image_size,
         'floor':[(0.43,0.59),(0.59,0.75),(0.75,0.91),(0.91,0.985)],
         'table':[(0.20,0.38),(0.38,0.56),(0.56,0.75),(0.75,0.91)],
         'wall':[(0.11,0.27),(0.27,0.44),(0.44,0.62),(0.62,0.82)],
-        'ceiling':[(0.03,0.17),(0.17,0.31),(0.31,0.47)],
+        'ceiling':[(0.008,0.17),(0.17,0.31),(0.31,0.47)],
     }
     for surf in surfaces:
         if surf not in ALLOWED_SURFACES:continue
@@ -4353,7 +4805,31 @@ def _v84_size_by_wall_width(profile,image_size,depth_map,point,group,masks,stats
         source=profile.get('size_source','category_size_unverified')
         bounds=TV_AC_WALL_SCALE_V84['aircon_wall_width_fraction_bounds']
     if not 15<=width_cm<=320:raise ValueError('unrealistic_product_width_cm')
-    raw_ratio=width_cm/wall_cm*factor
+    # Align horizontal pixel-per-cm scale with local vertical wall height (V8.12)
+    # when uncalibrated, so TV and AC share the exact same physical scale on the wall.
+    px_per_cm_w = span / wall_cm
+    local_wall_h = None
+    if calibrated is None:
+        try:
+            cx_pt = float(point[0]) if point is not None else float(W) * 0.5
+            top_y, bot_y = _v84_wall_ceiling_floor_edges(masks, (W, H), cx_pt)
+            local_wall_h = float(bot_y - top_y)
+        except Exception:
+            try:
+                ref_col = _v86_floor_wall_columns(masks, (W, H))
+                ix = int(np.clip(round(point[0] if point is not None else W * 0.5), 0, W - 1))
+                if ref_col['valid_columns'][ix]:
+                    local_wall_h = float(ref_col['floor_y'][ix] - ref_col['top_y'][ix])
+            except Exception:
+                local_wall_h = None
+    if local_wall_h is not None and local_wall_h >= 0.22 * H:
+        wall_h_cm = float(TV_WALL_GEOMETRY_V812.get('measured_wall_height_cm') or
+                          TV_WALL_GEOMETRY_V812.get('assumed_wall_height_cm', 265.0))
+        px_per_cm_h = local_wall_h / wall_h_cm
+        px_per_cm = max(px_per_cm_w, px_per_cm_h)
+        raw_ratio = (width_cm * px_per_cm * factor) / max(1.0, float(span))
+    else:
+        raw_ratio = width_cm / wall_cm * factor
     # Clipping is a safeguard, not the means of making a small TV into a big SKU.
     ratio=float(np.clip(raw_ratio,*bounds))
     bw=max(1,int(round(span*ratio)))
@@ -4538,7 +5014,14 @@ def _v84_find_aircon_placement(profile,masks,detections,image_size,depth_map=Non
             # No position or scale relationship with TV; only actual 2D collisions.
             preferred=AIRCON_WALL_CLEARANCE_V84['top_gap_preferred_wall_fraction']
             score=(2.0-5.0*abs(frac-preferred))
-            score+=.35*(1.0-abs(cx-(xlo+xhi)/2)/max(1,(xhi-xlo)/2))
+            target_cx = (xlo + xhi) / 2.0
+            for d_obj in detections:
+                if 'TV' in str(d_obj.get('label', '')) and d_obj.get('bbox') and len(d_obj['bbox']) == 4:
+                    tv_cx = 0.5 * (float(d_obj['bbox'][0]) + float(d_obj['bbox'][2]))
+                    if xlo <= tv_cx <= xhi:
+                        target_cx = tv_cx
+                        break
+            score+=.55*(1.0-abs(cx-target_cx)/max(1,(xhi-xlo)/2))
             score+=.12*(1.0-abs(scene['relative_depth_delta']))
             ranked.append((score,b,scene,clearance,diag))
         if examined>=max_n:break
@@ -4578,18 +5061,21 @@ _v84_choose_before=choose_placement_region
 def choose_placement_region(profile,masks,detections,image_size,
                             max_processing_side=640,depth_map=None):
     if not profile:return _unavailable_placement('unsupported_product','Missing product profile')
+    if isinstance(masks, dict):
+        _V84_MASK_CONTEXT.clear()
+        _V84_MASK_CONTEXT[id(masks)] = masks
     group=profile.get('group_name')
     if group=='Máy điều hòa':
         return _v84_find_aircon_placement(profile,masks,detections,image_size,depth_map)
     if group=='TV' and profile.get('surface')=='wall':
         p=deepcopy(profile)
-        _V84_MASK_CONTEXT.clear()
-        _V84_MASK_CONTEXT[id(masks)]=masks
         p['_v84_mask_context_key']=id(masks)
         return _v84_choose_before(p,masks,detections,image_size,
                                   max_processing_side=max_processing_side,
                                   depth_map=depth_map)
-    return _v84_choose_before(profile,masks,detections,image_size,
+    p=deepcopy(profile)
+    p['_v84_mask_context_key']=id(masks)
+    return _v84_choose_before(p,masks,detections,image_size,
                               max_processing_side=max_processing_side,
                               depth_map=depth_map)
 
@@ -4833,7 +5319,14 @@ def _v86_find_ac_using_floor(profile,masks,detections,image_size,depth_map=None)
                 reject('overlap_detected_or_reserved');continue
             pref=FLOOR_ONLY_WALL_POLICY_V86['ac_floor_gap_preferred_wall_fraction']
             score=2.0-4.5*abs(floor_frac-pref)
-            score+=.25*(1-abs(x-(left+right)*.5)/max((right-left)*.5,1))
+            target_cx = (left + right) * 0.5
+            for d_obj in detections:
+                if 'TV' in str(d_obj.get('label', '')) and d_obj.get('bbox') and len(d_obj['bbox']) == 4:
+                    tv_cx = 0.5 * (float(d_obj['bbox'][0]) + float(d_obj['bbox'][2]))
+                    if left <= tv_cx <= right:
+                        target_cx = tv_cx
+                        break
+            score+=.45*(1-abs(x-target_cx)/max((right-left)*.5,1))
             score+=.1*(1-min(1,abs(scene['relative_depth_delta'])))
             ranked.append((score,b,scene,clearance,plane_diag))
         if scanned>=max_n:break
@@ -4954,9 +5447,13 @@ def v811_prepare_tv_planes(image, masks):
         old=np.asarray(masks.get(name,[]),dtype=bool)
         front=np.asarray(masks.get('wall_plane_front',[]),dtype=bool)
         if old.shape==(H,W) and front.shape==(H,W) and old.sum()>.025*W*H:
-            xs=np.where(old)[1]
-            if len(xs)>100:
-                geo[side]=float(np.percentile(xs,97 if side=='left' else 3))
+            xs_old=np.where(old)[1]
+            xs_front=np.where(front)[1]
+            if len(xs_old)>100 and len(xs_front)>100:
+                if side=='left':
+                    geo[side]=0.5*float(np.percentile(xs_old,97)+np.percentile(xs_front,3))
+                else:
+                    geo[side]=0.5*float(np.percentile(xs_old,3)+np.percentile(xs_front,97))
     corners={**geo,**visual}
     # Ranh giới giao tường được nới rộng; bbox không bao giờ vượt qua dải này.
     band=max(int(TV_WALL_FIRST_POLICY_V811['corner_band_min_px']),
@@ -5271,7 +5768,7 @@ TV_WALL_GEOMETRY_V812 = {
     'depth_correction_bounds': (0.94, 1.06),
     'perspective_warp': True,
     'perspective_strength': 0.80,
-    'maximum_tv_plane_width_fraction': 0.69,
+    'maximum_tv_plane_width_fraction': 0.78,
     'minimum_usable_tv_width_px': 45,
     'minimum_plane_coverage': 0.94,
     'edge_clearance_image_fraction': 0.012,
@@ -5313,12 +5810,19 @@ def v812_tv_estimate_foreshortening(masks, image_size, plane_id, left, right):
     # This is a bounded visual prior; not a calibrated camera angle.
     span = max(1, right - left)
     refs = []
+    full_refs = []
     for q in (0.18, 0.5, 0.82):
         r = v812_tv_local_wall_reference(masks, image_size, left + q * span, plane_id)
         if r:
             refs.append(r['wall_height'])
+            full_refs.append(r)
     if len(refs) < 2:
         return 1., {'wall_height_variation': None}
+    if ('front' in str(plane_id) or 'unresolved' in str(plane_id)) and len(full_refs) >= 2:
+        floor_slope = abs(full_refs[-1]['floor_y'] - full_refs[0]['floor_y']) / max(1.0, 0.64 * span)
+        if floor_slope < 0.045:
+            return 1., {'wall_height_variation': 0.0,
+                        'correction_method': 'frontal_horizontal_floor_no_foreshortening'}
     change = (max(refs) - min(refs)) / max(1., np.median(refs))
     cfg = TV_WALL_GEOMETRY_V812
     correction = float(np.clip(1. - cfg['horizontal_foreshortening_strength'] * change,
@@ -5365,12 +5869,20 @@ def v812_tv_projected_quad(masks, image_size, plane_id, center_x, physical_width
     mid_top, mid_bottom = vertical_placement(reference)
     left_top, left_bottom = vertical_placement(local_left)
     right_top, right_bottom = vertical_placement(local_right)
-    strength = float(TV_WALL_GEOMETRY_V812['perspective_strength']) if TV_WALL_GEOMETRY_V812['perspective_warp'] else 0.0
-    # Blend with the center pose to suppress erratic segmentation boundaries.
-    left_top = mid_top + strength * (left_top-mid_top)
-    left_bottom = mid_bottom + strength * (left_bottom-mid_bottom)
-    right_top = mid_top + strength * (right_top-mid_top)
-    right_bottom = mid_bottom + strength * (right_bottom-mid_bottom)
+    floor_slope = abs(local_right['floor_y'] - local_left['floor_y']) / max(1.0, float(width_px))
+    is_frontal = (str(plane_id) in ('tv_plane_front', 'tv_plane_unresolved')) or (floor_slope < 0.045)
+    if is_frontal or not TV_WALL_GEOMETRY_V812['perspective_warp']:
+        strength = 0.0
+    else:
+        d_top = right_top - left_top
+        d_bot = right_bottom - left_bottom
+        # True 1-point/2-point side-wall perspective converges toward a vanishing point
+        strength = float(TV_WALL_GEOMETRY_V812['perspective_strength']) if (d_top * d_bot <= 0.0) else 0.0
+    max_delta = 0.08 * max(1.0, mid_bottom - mid_top)
+    left_top = mid_top + float(np.clip(strength * (left_top - mid_top), -max_delta, max_delta))
+    left_bottom = mid_bottom + float(np.clip(strength * (left_bottom - mid_bottom), -max_delta, max_delta))
+    right_top = mid_top + float(np.clip(strength * (right_top - mid_top), -max_delta, max_delta))
+    right_bottom = mid_bottom + float(np.clip(strength * (right_bottom - mid_bottom), -max_delta, max_delta))
     return [(float(x1),float(left_top)), (float(x2),float(right_top)),
             (float(x2),float(right_bottom)), (float(x1),float(left_bottom))]
 
@@ -5520,6 +6032,46 @@ def choose_placement_region(profile,masks,detections,image_size,
                max_processing_side=max_processing_side,depth_map=depth_map)
 
 
+def _clean_rectangular_product_cutout(rgba, group_name=None):
+    """Trim stray marketing badges/text floating outside a rectangular TV/AC body.
+
+    Many e-commerce thumbnails include '4K', 'AI', or warranty badges in the upper-left
+    or side margins. Removing low-density border strips keeps the physical appliance
+    silhouette intact and prevents perspective warping from stretching the screen.
+    """
+    arr = np.asarray(rgba, dtype=np.uint8)
+    alpha = arr[:, :, 3] > 16
+    H, W = alpha.shape
+    if H < 20 or W < 20:
+        return rgba
+    row_cov = alpha.mean(axis=1)
+    col_cov = alpha.mean(axis=0)
+    if group_name == 'TV':
+        # Main TV screen body occupies rows with high horizontal fill (>= 55%)
+        # and columns with high vertical fill (>= 55%).
+        core_rows = np.flatnonzero(row_cov >= 0.55)
+        core_cols = np.flatnonzero(col_cov >= 0.55)
+        if len(core_rows) >= int(0.50 * H) and len(core_cols) >= int(0.55 * W):
+            x0, x1 = int(core_cols[0]), int(core_cols[-1]) + 1
+            y0, y1 = int(core_rows[0]), int(core_rows[-1]) + 1
+            if (x1 - x0) >= 0.65 * W and (y1 - y0) >= 0.55 * H:
+                cleaned = arr[y0:y1, x0:x1].copy()
+                fill_ratio = float((cleaned[:, :, 3] > 16).mean())
+                if fill_ratio < 0.84:
+                    raise ValueError(f'TV cutout alpha fill ({fill_ratio:.2f}) bị khuyết góc hoặc banner đè màn hình')
+                return Image.fromarray(cleaned, mode='RGBA')
+    elif group_name == 'Máy điều hòa':
+        core_rows = np.flatnonzero(row_cov >= 0.45)
+        core_cols = np.flatnonzero(col_cov >= 0.45)
+        if len(core_rows) >= int(0.45 * H) and len(core_cols) >= int(0.60 * W):
+            x0, x1 = int(core_cols[0]), int(core_cols[-1]) + 1
+            y0, y1 = int(core_rows[0]), int(core_rows[-1]) + 1
+            if (x1 - x0) >= 0.70 * W and (y1 - y0) >= 0.50 * H:
+                cleaned = arr[y0:y1, x0:x1].copy()
+                return Image.fromarray(cleaned, mode='RGBA')
+    return rgba
+
+
 def v812_composite_tv_cutout(room,cutout,placement,masks):
     '''Project an API-validated RGBA TV onto the wall quad; no background-removal fallback.'''
     if cutout.mode!='RGBA' or 'tv_projective_quad' not in placement:
@@ -5528,7 +6080,7 @@ def v812_composite_tv_cutout(room,cutout,placement,masks):
     crop=alpha.point(lambda a:255 if a>8 else 0).getbbox()
     if crop is None:
         raise ValueError('API TV cutout has no visible alpha')
-    rgba=cutout.crop(crop)
+    rgba=_clean_rectangular_product_cutout(cutout.crop(crop), group_name='TV')
     sw,sh=rgba.size
     source_aspect=sw/max(1,sh)
     if not 1.20 <= source_aspect <= 3.00:
@@ -5669,6 +6221,25 @@ def v818_wall_metric_center(masks, image_size, plane_id):
     if cumulative[-1] <= 1e-8:
         return None
     fractions = cumulative/cumulative[-1]
+    if str(plane_id) in ('tv_plane_front', 'tv_plane_unresolved'):
+        best_wb = None
+        for wb in masks.get('_grounding_wall_boxes', []) or []:
+            if float(wb.get('sam_iou', 0.0)) < 0.80:
+                continue
+            bx1, _, bx2, _ = wb['bbox']
+            if (bx2 - bx1) < 0.25 * W:
+                continue
+            ov = max(0.0, min(float(right), float(bx2)) - max(float(left), float(bx1)))
+            if ov >= 0.72 * max(1.0, float(right - left)):
+                if best_wb is None or (bx2 - bx1) > (best_wb[1] - best_wb[0]):
+                    best_wb = (float(bx1), float(bx2))
+        if best_wb is not None:
+            arch_mid = 0.5 * (best_wb[0] + best_wb[1])
+            if left + 0.18 * (right - left) <= arch_mid <= right - 0.18 * (right - left):
+                f_arch = float(np.interp(arch_mid, xs, fractions))
+                if 0.25 <= f_arch <= 0.75 and abs(f_arch - 0.5) > 1e-4:
+                    gamma = float(np.log(0.5) / np.log(f_arch))
+                    fractions = np.power(np.clip(fractions, 0.0, 1.0), gamma)
     return {'x_samples': xs, 'distance_fractions':fractions,
             'center_x':float(np.interp(.5, fractions, xs)),
             'extent_px':[left,right],
@@ -6195,6 +6766,137 @@ def require_api_cutout(source_bytes, filename, mime, api_url=None,
 # ===== CELL 159 =====
 # F.4 — Composite đúng tỷ lệ silhouette, không tự xóa nền bằng Pillow.
 # Pillow CHỈ dùng alpha đã được API tạo ra để ghép ảnh.
+def _strip_disconnected_cutout_badges(cutout):
+    """Loại bỏ icon KSP / badge quảng cáo rời rạc bên hông/góc trên cutout RGBA, giữ nguyên chân đế/bánh xe."""
+    try:
+        from scipy.ndimage import binary_dilation, label as nd_label
+        arr = np.asarray(cutout, dtype=np.uint8)
+        if arr.ndim != 3 or arr.shape[2] != 4:
+            return cutout
+        fg = arr[:, :, 3] > 16
+        H, W = fg.shape
+        total_fg = int(fg.sum())
+        if H < 24 or W < 24 or total_fg < 64:
+            return cutout
+        rad = max(6, int(round(0.028 * max(H, W))))
+        struct = np.ones((2 * rad + 1, 2 * rad + 1), dtype=bool)
+        dilated = binary_dilation(fg, structure=struct)
+        labels, num = nd_label(dilated)
+        if num <= 1:
+            return cutout
+        areas = [int((fg & (labels == cid)).sum()) for cid in range(1, num + 1)]
+        main_idx = int(np.argmax(areas))
+        main_cid = main_idx + 1
+        main_area = areas[main_idx]
+        if main_area < 0.55 * total_fg:
+            return cutout
+        my, mx = np.where(fg & (labels == main_cid))
+        mx0, mx1 = int(mx.min()), int(mx.max())
+        my0 = int(my.min())
+        cleaned = arr.copy()
+        changed = False
+        for cid in range(1, num + 1):
+            if cid == main_cid:
+                continue
+            c_mask = fg & (labels == cid)
+            c_area = int(c_mask.sum())
+            if c_area == 0 or c_area >= 0.22 * main_area:
+                continue
+            cy, cx = np.where(c_mask)
+            cx0, cx1 = int(cx.min()), int(cx.max())
+            cy1 = int(cy.max())
+            if cx0 >= mx1 or cx1 <= mx0 or cy1 <= my0:
+                cleaned[labels == cid, 3] = 0
+                changed = True
+        return Image.fromarray(cleaned, mode='RGBA') if changed else cutout
+    except Exception:
+        return cutout
+
+
+def _adapt_profile_size_to_product_image(profile, source_bytes):
+    """Đo tỷ lệ khung hình thực tế của sản phẩm trên ảnh nền trắng studio (trước khi gọi API tách nền)
+    để tránh lệch tỷ lệ giữa các biến thể kiểu dáng (loa ngang/đứng, máy lọc dạng tháp, đèn bàn tay vươn)."""
+    try:
+        im = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+    except Exception:
+        return profile, (0, 0)
+    src_size = im.size
+    group_name = (profile or {}).get("group_name")
+    if not profile or group_name in ("TV", "Máy điều hòa", "Quạt trần"):
+        return profile, src_size
+    arr = np.asarray(im, dtype=np.float32)
+    sh, sw = arr.shape[:2]
+    if sh < 80 or sw < 80:
+        return profile, src_size
+    pad = max(4, min(sh, sw) // 18)
+    corners = (
+        arr[:pad, :pad],
+        arr[:pad, sw - pad:],
+        arr[sh - pad:, :pad],
+        arr[sh - pad:, sw - pad:],
+    )
+    if not all(float(c.mean()) >= 238.0 and float(c.std()) <= 18.0 for c in corners):
+        return profile, src_size
+    fg = np.any(arr < 238.0, axis=2)
+    ys, xs = np.where(fg)
+    if ys.size < int(0.03 * sh * sw) or ys.size > int(0.88 * sh * sw):
+        return profile, src_size
+    x0, x1 = int(np.quantile(xs, 0.01)), int(np.quantile(xs, 0.99))
+    y0, y1 = int(np.quantile(ys, 0.01)), int(np.quantile(ys, 0.99))
+    fg_w, fg_h = max(1, x1 - x0), max(1, y1 - y0)
+    if fg_w < 0.16 * sw and fg_h < 0.16 * sh:
+        return profile, src_size
+    fg_aspect = float(np.clip(fg_w / fg_h, 0.18, 4.5))
+    dims = profile.get("size_cm")
+    if not (isinstance(dims, dict) and dims.get("width") and dims.get("height")):
+        return profile, src_size
+    w0, h0 = float(dims["width"]), float(dims["height"])
+    if group_name in ("Máy lọc không khí", "Quạt điện") and fg_aspect < 0.36:
+        new_h = max(h0, 102.0)
+        new_w = max(22.0, new_h * fg_aspect)
+    else:
+        area_cm2 = w0 * h0
+        new_h = float(np.clip(np.sqrt(area_cm2 / fg_aspect), 0.65 * h0, 1.38 * h0))
+        new_w = float(np.clip(new_h * fg_aspect, 0.55 * w0, 1.85 * w0))
+    adapted = deepcopy(profile)
+    adapted["size_cm"] = {
+        "width": round(new_w, 1),
+        "height": round(new_h, 1),
+        "depth": float(dims.get("depth") or min(new_w, new_h)),
+    }
+    lo, hi = adapted.get("aspect_ratio_bounds", (0.15, 8.0))
+    adapted["aspect_ratio_bounds"] = (min(float(lo), 0.70 * fg_aspect), max(float(hi), 1.40 * fg_aspect))
+    return adapted, src_size
+
+
+def _validate_cutout_against_source(cutout, src_size, cand_group):
+    """Loại bỏ các cutout chỉ tách nhầm một góc/icon nhỏ từ ảnh banner khuyến mãi."""
+    src_w, src_h = src_size or (0, 0)
+    if src_w <= 0 or src_h <= 0:
+        return
+    crop = cutout.getchannel("A").point(lambda a: 255 if a > 8 else 0).getbbox()
+    if not crop:
+        raise ValueError("Cutout rỗng không có vùng hiển thị")
+    obj_w = crop[2] - crop[0]
+    obj_h = crop[3] - crop[1]
+    if max(src_w, src_h) >= 400 and max(obj_w, obj_h) < 0.34 * max(src_w, src_h):
+        raise ValueError(
+            f"Cutout ({obj_w}x{obj_h}) quá nhỏ so với ảnh sản phẩm ({src_w}x{src_h}) — nghi tách nhầm mảnh banner"
+        )
+    if cand_group == "TV" and src_w >= 350 and obj_w < 0.52 * src_w:
+        raise ValueError(
+            f"Cutout TV ({obj_w}x{obj_h}) hẹp bất thường so với ảnh gốc ({src_w}x{src_h})"
+        )
+
+
+def _post_composite_collision(rendered_bbox, occupancy, surface=None):
+    if isinstance(rendered_bbox, dict):
+        rect = [float(rendered_bbox[k]) for k in ('x1', 'y1', 'x2', 'y2')]
+    else:
+        rect = list(map(float, rendered_bbox))
+    return _collision_with_yolo_excluding_support(rect, occupancy or [], surface or '', margin=0)
+
+
 def composite_api_cutout(room,cutout,placement):
     bbox=(placement or {}).get('bbox_px')
     if not isinstance(bbox,dict):raise ValueError('Không có bounding box hợp lệ')
@@ -6202,16 +6904,28 @@ def composite_api_cutout(room,cutout,placement):
     W,H=room.size
     if not (0<=x1<x2<=W and 0<=y1<y2<=H):
         raise ValueError('Bounding box nằm ngoài ảnh')
+    cutout=_strip_disconnected_cutout_badges(cutout)
     a=cutout.getchannel('A')
     content_bbox=a.point(lambda p:255 if p>8 else 0).getbbox()
     if not content_bbox:raise ValueError('Cutout không còn vật thể hiển thị')
     obj=cutout.crop(content_bbox)
-    scale=min((x2-x1)/obj.width,(y2-y1)/obj.height)
+    bw,bh=x2-x1,y2-y1
+    src_aspect=obj.width/max(1,obj.height)
+    box_aspect=bw/max(1,bh)
+    # Reject malformed cutouts whose visible silhouette wildly disagrees with the
+    # planned physical geometry (e.g. a square front-only icon for a flat floor robot,
+    # or a circular/horizontal crop for a tall floor-standing appliance).
+    if (src_aspect < 0.42 * box_aspect or src_aspect > 2.40 * box_aspect or
+            (box_aspect <= 0.75 and src_aspect > max(0.82, 1.55 * box_aspect))):
+        raise ValueError(f'Cutout silhouette aspect ({src_aspect:.2f}) incompatible with planned aspect ({box_aspect:.2f})')
+    scale=min(bw/obj.width,bh/obj.height)
     target_size=(max(1,round(obj.width*scale)),max(1,round(obj.height*scale)))
+    if target_size[0] < 0.45 * bw and target_size[1] < 0.45 * bh:
+        raise ValueError('Cutout silhouette too small relative to planned bbox')
     obj=obj.resize(target_size,Image.Resampling.LANCZOS)
-    px=x1+((x2-x1)-obj.width)//2
+    px=x1+(bw-obj.width)//2
     surface=placement.get('surface')
-    py=y1 if surface=='ceiling' else y2-obj.height if surface in ('floor','table') else y1+((y2-y1)-obj.height)//2
+    py=y1 if surface=='ceiling' else y2-obj.height if surface in ('floor','table') else y1+(bh-obj.height)//2
     out=room.convert('RGBA').copy()
     out.alpha_composite(obj,(px,py))
     return out,{'x1':px,'y1':py,'x2':px+obj.width,'y2':py+obj.height}
@@ -6256,31 +6970,28 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 LIGHTING_POLICY_V88 = {
-    'enabled': True,
-    # Phòng quá tối/quá sáng mới cân bằng phơi sáng, tránh thay đổi ảnh bình thường.
-    'auto_correct_room_exposure': True,
+    'enabled': False,
+    'auto_correct_room_exposure': False,
     'dark_scene_median_threshold': 68.0,     # [0,255]
-    'bright_scene_median_threshold': 213.0,
+    'bright_scene_median_threshold': 255.0,
     'target_dark_scene_median': 87.0,
-    'target_bright_scene_median': 198.0,
-    'room_exposure_gain_min': 0.91,
-    'room_exposure_gain_max': 1.16,
-    # Matching dựa vào ĐỘ CHÊNH ÁNH SÁNG giữa vùng đặt và cùng bề mặt,
-    # KHÔNG ép màu trắng tường vào màu sắc vốn có của sản phẩm.
+    'target_bright_scene_median': 255.0,
+    'room_exposure_gain_min': 1.00,
+    'room_exposure_gain_max': 1.00,
     'local_ring_fraction_of_bbox': 0.28,
     'local_ring_min_px': 16,
     'min_local_sample_pixels': 60,
-    'object_gain_min': 0.74,
-    'object_gain_max': 1.24,
-    'local_vs_surface_strength': 0.72,
-    'ambient_strength': 0.26,
+    'object_gain_min': 1.00,
+    'object_gain_max': 1.00,
+    'local_vs_surface_strength': 0.0,
+    'ambient_strength': 0.0,
     'neutral_scene_luma': 165.0,
-    'object_contrast_min': 0.92,
-    'object_contrast_max': 1.08,
-    'color_cast_strength': 0.16,
-    'max_color_channel_bias': 0.055,
-    'tv_relighter_strength': 0.50,    # giữ nội dung/màu màn hình TV
-    'debug': True,
+    'object_contrast_min': 1.00,
+    'object_contrast_max': 1.00,
+    'color_cast_strength': 0.0,
+    'max_color_channel_bias': 0.0,
+    'tv_relighter_strength': 0.0,
+    'debug': False,
 }
 
 
@@ -6429,18 +7140,17 @@ def v88_relight_api_cutout(cutout, scene_reference, placement, masks=None,
     return output,diag
 
 # ===== CELL 165 =====
-# F.4a.2b — V8.20: photometric target = 80% scene illumination, dynamic per input room.
-# Works on API-returned RGBA only. Call AFTER V8.8 lighting and BEFORE compositing.
+# Đã loại bỏ các rule giảm độ sáng (V8.20 minus 20% brightness & exposure dimming).
 SCENE_RELATIVE_OBJECT_BRIGHTNESS_V820 = {
-    'enabled': True,
-    'relative_brightness': 0.80,      # muc tieu: 80% do sang anh phong tai noi dat
-    'local_scene_weight': 0.55,       # 55% vung dat, 45% toan anh
+    'enabled': False,
+    'relative_brightness': 1.00,
+    'local_scene_weight': 0.55,
     'local_padding_fraction': 0.25,
     'local_padding_min_px': 12,
     'min_local_sample_pixels': 64,
-    'alpha_visible_threshold': 64,    # do sang chi do tren phan vat the co alpha ro
-    'min_rgb_exposure_gain': 0.25,
-    'max_rgb_exposure_gain': 2.00,
+    'alpha_visible_threshold': 64,
+    'min_rgb_exposure_gain': 1.00,
+    'max_rgb_exposure_gain': 1.00,
     'max_samples_for_exposure_search': 12000,
     'exposure_binary_steps': 15,
 }
@@ -6449,127 +7159,17 @@ SCENE_RELATIVE_OBJECT_BRIGHTNESS_V820 = {
 def v820_match_object_to_scene_minus_20(api_lit_cutout, scene_reference,
                                          placement, masks=None, group_name=None,
                                          policy=None):
-    """Relight API cutout using the uploaded room's brightness, keep alpha exactly.
-
-    Dynamic reference = mix of global room luminance and local placement surround.
-    Target *visible-object average luminance* = 80% of dynamic reference.
-    Exposure is bounded; when clipping/limits prevent 80%, diagnostics report it.
-    This stage never creates a cutout or substitutes a product on API failure.
-    """
-    p = policy or SCENE_RELATIVE_OBJECT_BRIGHTNESS_V820
+    """Giữ nguyên độ sáng và màu sắc gốc của ảnh RGBA từ API tách nền (không giảm sáng)."""
     if api_lit_cutout.mode != 'RGBA':
-        raise ValueError('V8.20 chi nhan anh RGBA da duoc API tach nen xac thuc')
-    alpha = np.asarray(api_lit_cutout.getchannel('A'))
-    threshold = int(p['alpha_visible_threshold'])
-    visible = alpha >= threshold
-    if not visible.any() or not (alpha < 24).any():
-        raise ValueError('Anh API khong co du pixel vat the va nen trong suot')
-
-    bbox = (placement or {}).get('bbox_px')
-    if not isinstance(bbox, dict):
-        raise ValueError('V8.20 can bbox hop le de phan tich anh phong')
-    W, H = scene_reference.size
-    x1, y1, x2, y2 = (int(bbox[k]) for k in ('x1','y1','x2','y2'))
-    if not (0 <= x1 < x2 <= W and 0 <= y1 < y2 <= H):
-        raise ValueError('BBox nam ngoai anh khi phan tich do sang')
-
-    scene_rgb = np.asarray(scene_reference.convert('RGB'), dtype=np.float32)
-    global_stats = _v88_robust_luma(scene_rgb)
-    surface_mask, surface_name = _v88_surface_mask(
-        masks, (placement or {}).get('surface'), (H, W))
-
-    pad = max(int(p['local_padding_min_px']),
-              int(round(max(x2-x1, y2-y1) * float(p['local_padding_fraction']))))
-    rx1, ry1 = max(0, x1-pad), max(0, y1-pad)
-    rx2, ry2 = min(W, x2+pad), min(H, y2+pad)
-    local_mask = np.zeros((H,W), dtype=bool)
-    local_mask[ry1:ry2, rx1:rx2] = True
-    local_mask[y1:y2, x1:x2] = False
-    local_mask &= surface_mask
-    sample_source = 'bbox_ring_same_surface'
-    if int(local_mask.sum()) < int(p['min_local_sample_pixels']):
-        # When a side wall has a small mask, measure the uncovered location itself.
-        local_mask = np.zeros((H,W), dtype=bool)
-        local_mask[y1:y2, x1:x2] = True
-        local_mask &= surface_mask
-        sample_source = 'bbox_area_same_surface'
-    if int(local_mask.sum()) < int(p['min_local_sample_pixels']):
-        local_mask = surface_mask
-        sample_source = 'surface_fallback'
-    if int(local_mask.sum()) < int(p['min_local_sample_pixels']):
-        # Last resort is global scene brightness, not a substitute image/cutout.
-        local_luma = float(global_stats['mean_trimmed'])
-        sample_source = 'global_luma_only'
-    else:
-        local_luma = float(_v88_robust_luma(scene_rgb, local_mask)['mean_trimmed'])
-
-    global_luma = float(global_stats['mean_trimmed'])
-    local_weight = float(np.clip(p['local_scene_weight'], 0, 1))
-    ref_luma = global_luma*(1-local_weight) + local_luma*local_weight
-    target_luma = float(ref_luma * float(p['relative_brightness']))
-    pixels = np.asarray(api_lit_cutout, dtype=np.uint8).copy()
-    original_alpha = pixels[...,3].copy()
-    rgb_float = pixels[..., :3].astype(np.float32)
-    sample_pixels = rgb_float[visible]
-    max_samples = int(p['max_samples_for_exposure_search'])
-    if len(sample_pixels) > max_samples:
-        sample_pixels = sample_pixels[::max(1, len(sample_pixels)//max_samples)][:max_samples]
-
-    def sample_luma_at_gain(gain):
-        samples = np.minimum(sample_pixels * gain, 255.0)
-        return float(_v88_luma(samples).mean())
-
-    before_luma = sample_luma_at_gain(1.0)
-    low = float(p['min_rgb_exposure_gain'])
-    high = float(p['max_rgb_exposure_gain'])
-    if low <= 0 or high < low:
-        raise ValueError('Cau hinh do sang V8.20 khong hop le')
-    if not p['enabled']:
-        exposure_gain = 1.0
-    elif target_luma <= sample_luma_at_gain(low):
-        exposure_gain = low
-    elif target_luma >= sample_luma_at_gain(high):
-        exposure_gain = high
-    else:
-        left, right = low, high
-        for _ in range(int(p['exposure_binary_steps'])):
-            mid = (left + right)/2
-            if sample_luma_at_gain(mid) < target_luma:
-                left = mid
-            else:
-                right = mid
-        exposure_gain = (left + right)/2
-
-    if p['enabled']:
-        # Color ratios & original alpha preserved. No local segmentation/fallback.
-        corrected = np.uint8(np.clip(np.rint(rgb_float*exposure_gain), 0, 255))
-        pixels[..., :3] = corrected
-    if not np.array_equal(pixels[...,3], original_alpha):
-        raise AssertionError('Lighting stage changed API alpha channel')
-    output = Image.fromarray(pixels, mode='RGBA')
-    after_luma = sample_luma_at_gain(exposure_gain)
-    actual_ratio = after_luma/max(ref_luma, 1e-6)
+        raise ValueError('Chỉ nhận ảnh RGBA đã được API tách nền xác thực')
     diagnostics = {
-        'lighting_method': 'V8.20_dynamic_scene_minus_20_percent',
+        'lighting_method': 'disabled_original_brightness',
         'group_name': str(group_name or ''),
-        'scene_global_luma': round(global_luma, 2),
-        'scene_local_luma': round(local_luma, 2),
-        'scene_reference_luma': round(ref_luma, 2),
-        'local_scene_weight': round(local_weight, 3),
-        'sample_source': sample_source,
-        'surface_mask_source': surface_name,
-        'target_brightness_fraction_of_scene': float(p['relative_brightness']),
-        'target_product_luma': round(target_luma, 2),
-        'product_luma_before_final_adjustment': round(before_luma, 2),
-        'product_luma_after_final_adjustment': round(after_luma, 2),
-        'actual_fraction_of_scene': round(actual_ratio, 4),
-        'final_brightness_factor': round(float(exposure_gain), 4),
-        'exposure_gain_limited': bool(p['enabled'] and
-            ((exposure_gain <= low+1e-4) or (exposure_gain >= high-1e-4))),
+        'final_brightness_factor': 1.0,
         'alpha_preserved_after_final_brightness': True,
-        'enabled': bool(p['enabled']),
+        'enabled': False,
     }
-    return output, diagnostics
+    return api_lit_cutout.copy(), diagnostics
 
 # ===== CELL 167 =====
 # F.4a.3 — Photometric diagnostics.
@@ -6656,7 +7256,7 @@ def v89_pair_selected_products(stage1_result):
         return None
     profiles={}
     for entry in stage1_result.get('recommendations',[]):
-        group=entry.get('group_name')
+        group=entry.get('placement_group') or entry.get('group_name')
         if group in ('TV','Máy điều hòa') and group not in profiles:
             p=resolve_product_profile(group,entry.get('selected_product') or {})
             if p is not None and p.get('surface')=='wall':
@@ -6694,8 +7294,8 @@ def v89_order_render_items(stage1_result, pair):
     """Xu ly TV truoc AC de co moc pixel, giu NGUYEN danh sach va rank Stage 1."""
     items=list(enumerate(stage1_result.get('recommendations',[]),1))
     if not pair:return items
-    ti=next((i for i,(_,r) in enumerate(items) if r.get('group_name')=='TV'),None)
-    ai=next((i for i,(_,r) in enumerate(items) if r.get('group_name')=='Máy điều hòa'),None)
+    ti=next((i for i,(_,r) in enumerate(items) if (r.get('placement_group') or r.get('group_name'))=='TV'),None)
+    ai=next((i for i,(_,r) in enumerate(items) if (r.get('placement_group') or r.get('group_name'))=='Máy điều hòa'),None)
     if ti is not None and ai is not None and ai<ti:
         items[ai],items[ti]=items[ti],items[ai]
     return items
@@ -6773,8 +7373,8 @@ def v89_composite_width_first(room,cutout,placement,target_width_px):
     a=cutout.getchannel('A')
     content=a.point(lambda value:255 if value>8 else 0).getbbox()
     if not content:raise ValueError('Cutout from API is fully transparent')
-    obj=cutout.crop(content)
     group=placement.get('group_name','')
+    obj=_clean_rectangular_product_cutout(cutout.crop(content), group_name=group)
     box=placement['bbox_px']
     x1,y1,x2,y2=[int(box[k]) for k in ('x1','y1','x2','y2')]
     bw=x2-x1;bh=y2-y1
@@ -6899,6 +7499,9 @@ def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True, user_
     print('[V8.8] Độ sáng trung vị phòng:',round(scene_lighting['before']['median'],1),
           '| hệ số phơi sáng nền:',scene_lighting['room_exposure_gain'])
     detected=list(stage1_result.get('spatial_detections',[]))
+    for g_obj in segmentation_info.get('grounding_scene_objects', []) or []:
+        if not any(_rf_bbox_iou(g_obj['bbox'], d['bbox']) > 0.55 for d in detected if d.get('bbox') and len(d['bbox']) == 4):
+            detected.append(g_obj)
     reserved=[];canvas=scene_render.copy();results=[]
     # V8.9: only pair the EXACT TV/AC SKUs chosen in Stage 1, if both mount on wall.
     tv_ac_pair=v89_pair_selected_products(stage1_result)
@@ -6966,7 +7569,7 @@ def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True, user_
                 rec['planned_bbox_width_px']=bbox['x2']-bbox['x1']
                 rec['reference_wall_span_px']=rec['scale_diagnostics'].get('front_wall_span_px')
                 rec['sku_width_cm_estimate']=rec['scale_diagnostics'].get('product_width_cm_estimate')
-            if any(boxes_intersect(bbox,d['bbox']) for d in occupancy if d.get('bbox') is not None):
+            if _post_composite_collision(bbox, occupancy, placement.get('surface')):
                 rec.update(status='placement_collision',reason='Bbox đè lên vật thể/ảnh đã ghép')
                 continue
             if not product['image_url']:
@@ -6975,15 +7578,9 @@ def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True, user_
             source_bytes,source_name,mime=download_selected_product_image(product['image_url'])
             # Bắt buộc gọi remove-background API (V8.28 Image-Only). Nếu lỗi => bắt exception => KHÔNG dán ảnh.
             cutout=require_api_cutout(source_bytes,source_name,mime,user_agent=user_agent)
-            # V8.8: chỉ relight PNG đã xóa nền bằng API; giữ nguyên kênh alpha.
-            # So ánh sáng quanh bbox với độ sáng của cùng bề mặt trong ảnh phòng.
-            lit_cutout,lighting=v88_relight_api_cutout(
-                cutout,scene_render,placement,masks=masks,group_name=group)
-            # V8.20: do do sang anh phong + vung dat, muc tieu cutout thap hon 20%.
-            # Ap dung cho MOI SKU da tach nen thanh cong, alpha tu API duoc giu nguyen.
-            lit_cutout,final_brightness=v820_match_object_to_scene_minus_20(
-                lit_cutout, scene_render, placement, masks=masks, group_name=group)
-            lighting.update(final_brightness)
+            # Giữ nguyên độ sáng và màu sắc gốc của cutout từ API (không giảm độ sáng).
+            lit_cutout = cutout
+            lighting = {'enabled': False, 'brightness_gain': 1.0, 'final_brightness_factor': 1.0}
             if (group=='TV' and placement.get('surface')=='wall'
                     and TV_WALL_GEOMETRY_V812['enabled']):
                 # TV only: API-validated cutout warped to the SINGLE chosen wall.
@@ -7002,8 +7599,7 @@ def stage2_render(stage1_result, output_base=OUTPUT_BASE, show_final=True, user_
                 next_canvas,rendered_bbox=composite_api_cutout(canvas,lit_cutout,placement)
             # The actual rendered bbox can be wider than the planned bbox.
             # A collision is forbidden even when the original planned bbox was safe.
-            if any(boxes_intersect(rendered_bbox,d['bbox']) for d in occupancy
-                   if d.get('bbox') is not None):
+            if _post_composite_collision(rendered_bbox, occupancy, placement.get('surface')):
                 raise ValueError('Actual API cutout intersects detected/committed object')
             # Chỉ commit khi VẬT THỂ THỰC TẾ trả về từ API cũng nằm trên 1 mặt.
             # Bounding box sau alpha trim có thể khác bbox placement ban đầu.
@@ -7172,6 +7768,8 @@ def render_room_recommendations(
     remove_bg_api_url: str | None = None,
     output_dir: Path | None = None,
     user_agent: str | None = None,
+    use_flux: bool | None = None,
+    flux_settings: dict | None = None,
 ) -> dict:
     """Run spatial placement and render for recommended products.
 
@@ -7197,9 +7795,11 @@ def render_room_recommendations(
         if not key or not gname or key in seen:
             continue
         seen.add(key)
-        prods = grp.get("products") or []
+        prods = list(grp.get("products") or [])
         if not prods:
             continue
+        if canonical_placement_group(gname, prods[0]) == "TV" and len(prods) > 1:
+            prods.sort(key=lambda p: abs(tv_diagonal_inches((p or {}).get("product_name", ""))[0] - 65))
         prod = dict(prods[0])  # Top 1 sản phẩm của category (không random)
         for k in ("product_id", "product_code", "product_name", "image_url", "product_url", "category_id", "brand"):
             prod[k] = str(prod.get(k) or "").strip()
@@ -7232,9 +7832,7 @@ def render_room_recommendations(
     detected_raw = recommendations_result.get("detected_objects", [])
     spatial_detections = extract_api_spatial_detections(detected_raw, room.size)
     non_obstacles = {
-        "rug", "carpet", "wall art", "decor", "curtain", "pillow",
-        "light", "books", "vase", "clock", "mirror", "candle",
-        "picture frame", "mugs teacups", "planter", "basket/bin"
+        "rug", "carpet", "curtain", "pillow",
     }
     spatial_detections = [d for d in spatial_detections if d.get("label", "").lower() not in non_obstacles]
 
@@ -7249,10 +7847,16 @@ def render_room_recommendations(
 
     # Segmentation and Depth
     try:
-        masks, segmentation_info = segment_room_surfaces(room.convert("RGB"))
+        masks, segmentation_info = segment_room_surfaces(room.convert("RGB"), detections=spatial_detections)
     except Exception as exc:
         masks = {}
         segmentation_info = {"status": "unavailable", "reason": f"{type(exc).__name__}: {exc}"}
+
+    for g_obj in segmentation_info.get("grounding_scene_objects", []) or []:
+        if str(g_obj.get("label", "")).lower() in non_obstacles:
+            continue
+        if not any(_rf_bbox_iou(g_obj["bbox"], d["bbox"]) > 0.55 for d in spatial_detections if d.get("bbox") and len(d["bbox"]) == 4):
+            spatial_detections.append(g_obj)
 
     if segmentation_info.get("status") == "ok":
         tv_meta = v811_prepare_tv_planes(room, masks)
@@ -7264,12 +7868,9 @@ def render_room_recommendations(
         depth = None
         depth_info = {"status": "unavailable", "reason": f"{type(exc).__name__}: {exc}"}
 
-    # Lighting
-    try:
-        scene_render, scene_lighting = v88_analyze_room_and_prepare_render(room, job_dir=None)
-    except Exception as exc:
-        scene_render = room.copy()
-        scene_lighting = {"status": "unavailable", "room_exposure_gain": 1.0}
+    # Giữ nguyên độ sáng gốc của ảnh phòng (không giảm phơi sáng nền)
+    scene_render = room.copy()
+    scene_lighting = {"enabled": False, "room_exposure_gain": 1.0}
 
     # TV/AC pairing
     stage1_wrap = {"recommendations": selected_items}
@@ -7282,168 +7883,271 @@ def render_room_recommendations(
     results = []
 
     for rank, entry in ordered_items:
-        prods = entry.get("products") or [entry.get("selected_product")]
-        prod = prods[0] if prods else entry.get("selected_product")
+        prods = [p for p in (entry.get("products") or [entry.get("selected_product")]) if p]
+        prods_ordered = sorted(
+            prods[:8],
+            key=lambda p: (
+                (1 if "/timerseo/" in str((p or {}).get("image_url") or "").lower() else 0)
+                + (2 if "thumbksp" in str((p or {}).get("image_url") or "").lower() else 0)
+            ),
+        )
+        initial_selected_pid = str((entry.get("selected_product") or {}).get("product_id") or "")
         group = entry["placement_group"]
-
-        prod_dict = dict(prod or {})
-        for k in ("product_id", "product_code", "product_name", "image_url", "product_url", "category_id", "brand"):
-            prod_dict[k] = str(prod_dict.get(k) or "").strip()
-        prod_dict["brand"] = prod_dict["brand"] or str(prod.get("brand_name") or "").strip()
-        prod_dict["category_id"] = prod_dict["category_id"] or entry.get("category_id") or ""
-        try:
-            prod_dict["price"] = float(prod_dict.get("price") or 0.0)
-        except (ValueError, TypeError):
-            prod_dict["price"] = 0.0
-        prod_dict["currency"] = str(prod_dict.get("currency") or "VND")
-        prod_dict["subcategory"] = str(prod_dict.get("subcategory") or prod_dict.get("product_type") or "").strip()
-
-        current_rec = {
-            "rank": rank,
-            "category_id": entry.get("category_id"),
-            "group_name": entry.get("group_name"),
-            "placement_group": group,
-            "product_id": prod_dict.get("product_id"),
-            "product_name": prod_dict.get("product_name"),
-            "price": prod_dict.get("price"),
-            "currency": prod_dict.get("currency"),
-            "image_url": prod_dict.get("image_url"),
-            "status": "pending",
-            "reason": "",
-            "surface": None,
-            "bbox_px": None,
-            "rendered_bbox_px": None,
-        }
-
         verified_mapping = entry.get("category_mapping") or {}
-        if not verified_mapping.get("renderable"):
-            reason = verified_mapping.get("reason", "Thiếu category mapping an toàn")
-            current_rec.update(status="unmapped_category", reason=reason)
-            logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): %s", prod_dict.get("product_id"), prod_dict.get("product_name"), group, reason)
-            results.append(current_rec)
-            continue
+        last_rec = None
 
-        restriction = api_product_placement_restriction(group, prod_dict)
-        if restriction:
-            current_rec.update(status="unsupported_product_surface", reason=restriction)
-            logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): %s", prod_dict.get("product_id"), prod_dict.get("product_name"), group, restriction)
-            results.append(current_rec)
-            continue
+        for cand_idx, prod in enumerate(prods_ordered):
+            prod_dict = dict(prod or {})
+            for k in ("product_id", "product_code", "product_name", "image_url", "product_url", "category_id", "brand"):
+                prod_dict[k] = str(prod_dict.get(k) or "").strip()
+            prod_dict["brand"] = prod_dict["brand"] or str((prod or {}).get("brand_name") or "").strip()
+            prod_dict["category_id"] = prod_dict["category_id"] or entry.get("category_id") or ""
+            try:
+                prod_dict["price"] = float(prod_dict.get("price") or 0.0)
+            except (ValueError, TypeError):
+                prod_dict["price"] = 0.0
+            prod_dict["currency"] = str(prod_dict.get("currency") or "VND")
+            prod_dict["subcategory"] = str(prod_dict.get("subcategory") or prod_dict.get("product_type") or "").strip()
 
-        if segmentation_info.get("status") != "ok":
-            current_rec.update(status="no_placement", reason="SAM 2 không cung cấp surface masks")
-            logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): SAM 2 không cung cấp surface masks", prod_dict.get("product_id"), prod_dict.get("product_name"), group)
-            results.append(current_rec)
-            continue
+            is_alt_sku = (cand_idx > 0) or (prod_dict.get("product_id") != initial_selected_pid)
+            cand_mapping = verified_mapping
+            cand_group = group
+            if is_alt_sku:
+                cand_mapping = v815_resolve_category(entry.get("category_id"), entry.get("group_name"), prod_dict)
+                cand_group = cand_mapping.get("placement_group") or group
 
-        try:
-            profile = resolve_product_profile(group, prod_dict)
-            if profile is None:
-                current_rec.update(status="no_placement", reason="Không có placement profile")
-                logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): Không có placement profile", prod_dict.get("product_id"), prod_dict.get("product_name"), group)
-                results.append(current_rec)
+            current_rec = {
+                "rank": rank,
+                "category_id": entry.get("category_id"),
+                "group_name": entry.get("group_name"),
+                "placement_group": cand_group,
+                "product_id": prod_dict.get("product_id"),
+                "product_name": prod_dict.get("product_name"),
+                "price": prod_dict.get("price"),
+                "currency": prod_dict.get("currency"),
+                "image_url": prod_dict.get("image_url"),
+                "status": "pending",
+                "reason": "",
+                "surface": None,
+                "bbox_px": None,
+                "rendered_bbox_px": None,
+            }
+
+            if not cand_mapping.get("renderable"):
+                reason = cand_mapping.get("reason", "Thiếu category mapping an toàn")
+                current_rec.update(status="unmapped_category", reason=reason)
+                logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): %s", prod_dict.get("product_id"), prod_dict.get("product_name"), cand_group, reason)
+                last_rec = current_rec
                 continue
 
-            occupancy = spatial_detections + reserved
-            placement = choose_placement_region(profile, masks, occupancy, room.size, depth_map=depth)
-            if not placement.get("bbox_px"):
-                reason = f"{placement.get('status', 'no_safe_region')}: {placement.get('reason', '')}"
+            if is_alt_sku:
+                apply_api_sku_surface_metadata(cand_group, prod_dict)
+                entry["selected_product"] = prod_dict
+                if cand_group in ("TV", "Máy điều hòa"):
+                    tv_ac_pair = v89_pair_selected_products(stage1_wrap)
+
+            restriction = api_product_placement_restriction(cand_group, prod_dict)
+            if restriction:
+                current_rec.update(status="unsupported_product_surface", reason=restriction)
+                logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): %s", prod_dict.get("product_id"), prod_dict.get("product_name"), cand_group, restriction)
+                last_rec = current_rec
+                continue
+
+            if segmentation_info.get("status") != "ok":
+                current_rec.update(status="no_placement", reason="SAM 2 không cung cấp surface masks")
+                logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): SAM 2 không cung cấp surface masks", prod_dict.get("product_id"), prod_dict.get("product_name"), cand_group)
+                last_rec = current_rec
+                break
+
+            try:
+                profile = resolve_product_profile(cand_group, prod_dict)
+                if profile is None:
+                    current_rec.update(status="no_placement", reason="Không có placement profile")
+                    logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): Không có placement profile", prod_dict.get("product_id"), prod_dict.get("product_name"), cand_group)
+                    last_rec = current_rec
+                    continue
+
+                if not prod_dict.get("image_url"):
+                    current_rec.update(status="missing_image_url", reason="SKU không có image_url")
+                    last_rec = current_rec
+                    continue
+
+                # Tải ảnh sản phẩm trước để khớp tỷ lệ hình dáng thực tế (studio) trước khi tìm vị trí
+                try:
+                    source_bytes, source_name, mime = download_selected_product_image(prod_dict["image_url"])
+                except Exception as dl_exc:
+                    logger.error(
+                        "Lỗi tải ảnh sản phẩm [%s - %s] từ URL '%s': %s",
+                        prod_dict.get("product_id"), prod_dict.get("product_name"),
+                        prod_dict.get("image_url"), dl_exc, exc_info=True,
+                    )
+                    current_rec.update(status="download_failed", reason=f"Lỗi tải ảnh: {dl_exc}")
+                    last_rec = current_rec
+                    continue
+
+                profile, src_img_size = _adapt_profile_size_to_product_image(profile, source_bytes)
+
+                occupancy = spatial_detections + reserved
+                placement = choose_placement_region(profile, masks, occupancy, room.size, depth_map=depth)
+                if not placement.get("bbox_px"):
+                    reason = f"{placement.get('status', 'no_safe_region')}: {placement.get('reason', '')}"
+                    current_rec.update(
+                        status="no_placement",
+                        reason=reason,
+                    )
+                    logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): Không tìm được vị trí đặt an toàn (%s)", prod_dict.get("product_id"), prod_dict.get("product_name"), cand_group, reason)
+                    last_rec = current_rec
+                    continue
+
+                bbox = placement["bbox_px"]
+                if any(boxes_intersect(bbox, d["bbox"]) for d in reserved if d.get("bbox") is not None):
+                    current_rec.update(status="placement_collision", reason="Bbox đè lên ảnh đã ghép")
+                    last_rec = current_rec
+                    continue
+
+                try:
+                    cutout = require_api_cutout(
+                        source_bytes,
+                        source_name,
+                        mime,
+                        api_url=api_url,
+                        product_id=prod_dict.get("product_id"),
+                        product_name=prod_dict.get("product_name"),
+                        group_name=cand_group,
+                        user_agent=user_agent,
+                    )
+                    logger.info(
+                        "Tách nền THÀNH CÔNG cho sản phẩm [%s - %s] (nhóm: %s) — tiếp tục xử lý relighting và compositing",
+                        prod_dict.get("product_id"),
+                        prod_dict.get("product_name"),
+                        cand_group,
+                    )
+                except Exception as api_exc:
+                    logger.error(
+                        "Tách nền THẤT BẠI cho sản phẩm [%s - %s] (nhóm: %s): %s",
+                        prod_dict.get("product_id"),
+                        prod_dict.get("product_name"),
+                        cand_group,
+                        api_exc,
+                    )
+                    current_rec.update(status="cutout_error", reason=f"Không gọi được API tách nền: {api_exc}")
+                    last_rec = current_rec
+                    continue
+
+                _validate_cutout_against_source(cutout, src_img_size, cand_group)
+
+                # Giữ nguyên độ sáng và màu sắc gốc của sản phẩm sau tách nền (đã bỏ rule giảm sáng V8.8 / V8.20)
+                lit_cutout = cutout
+                lighting = {"enabled": False, "brightness_gain": 1.0, "final_brightness_factor": 1.0}
+
+                # Compositing & Paired Scale Synchronization (V8.10 + V8.12)
+                if cand_group == "TV" and placement.get("surface") == "wall" and TV_WALL_GEOMETRY_V812.get("enabled"):
+                    next_canvas, rendered_bbox, projection_diag = v812_composite_tv_cutout(canvas, lit_cutout, placement, masks)
+                    current_rec["tv_projective_geometry"] = projection_diag
+                elif cand_group in ("TV", "Máy điều hòa") and placement.get("surface") == "wall":
+                    target_width, pair_info = v89_target_width_for_pair(
+                        cand_group, placement, tv_ac_pair, committed_wall_pair
+                    )
+                    placement["group_name"] = cand_group
+                    next_canvas, rendered_bbox = v89_composite_width_first(
+                        canvas, lit_cutout, placement, target_width
+                    )
+                    current_rec["paired_scale_plan"] = pair_info
+                else:
+                    next_canvas, rendered_bbox = composite_api_cutout(canvas, lit_cutout, placement)
+
+                # Post-composite collision and silhouette validation
+                if _post_composite_collision(rendered_bbox, occupancy, placement.get("surface")):
+                    raise ValueError("Actual API cutout intersects detected/committed object")
+
+                if placement.get("surface") == "wall":
+                    if cand_group == "TV" and TV_WALL_GEOMETRY_V812.get("enabled"):
+                        wall_ok, wall_diag = v812_tv_quad_check(
+                            masks, room.size, placement["tv_projective_quad"],
+                            placement["tv_wall_selection"]["chosen_plane"]
+                        )
+                    elif cand_group == "TV":
+                        wall_ok, wall_diag = v811_tv_plane_box_check(
+                            masks, room.size,
+                            [rendered_bbox[k] for k in ("x1", "y1", "x2", "y2")],
+                            plane_id=placement.get("tv_wall_selection", {}).get("chosen_plane")
+                        )
+                    else:
+                        wall_ok, wall_diag = _wall_plane_box_check(
+                            masks, room.size,
+                            [rendered_bbox[k] for k in ("x1", "y1", "x2", "y2")],
+                            threshold=(AIRCON_WALL_CLEARANCE_V84["wall_plane_coverage_min"]
+                                       if cand_group == "Máy điều hòa" else None)
+                        )
+                    if not wall_ok:
+                        raise ValueError("Ảnh sau API vượt qua góc tường: " + str(wall_diag.get("reason")))
+                    current_rec["wall_plane"] = wall_diag
+
+                if cand_group == "TV":
+                    tv_geometry = (
+                        v812_validate_projected_tv_scale(placement, rendered_bbox, room.size)
+                        if TV_WALL_GEOMETRY_V812.get("enabled")
+                        else validate_tv_cutout_scale(bbox, rendered_bbox, room.size)
+                    )
+                    current_rec["tv_scale"] = tv_geometry
+
+                if cand_group == "Máy điều hòa":
+                    ac_validation_bbox = dict(bbox)
+                    if current_rec.get("paired_scale_plan", {}).get("paired_with") == "TV":
+                        ac_validation_bbox["x2"] = (
+                            ac_validation_bbox["x1"] + int(current_rec["paired_scale_plan"]["target_width_px"])
+                        )
+                    current_rec["aircon_rendered_scale"] = validate_aircon_api_silhouette(
+                        ac_validation_bbox, rendered_bbox, room.size
+                    )
+                    ac_good, ac_clearance = _v84_aircon_wall_clearance(
+                        masks, room.size, [rendered_bbox[k] for k in ("x1", "y1", "x2", "y2")]
+                    )
+                    if not ac_good:
+                        raise ValueError(
+                            "Máy lạnh sau API không đạt khoảng hở theo ranh giới bề mặt: " + str(ac_clearance)
+                        )
+                    current_rec["aircon_wall_clearance"] = ac_clearance
+                    if placement.get("surface") == "wall":
+                        current_rec["tv_aircon_pair_check"] = v89_validate_paired_render(
+                            cand_group, rendered_bbox, placement, tv_ac_pair, committed_wall_pair
+                        )
+
+                canvas = next_canvas
+                reserved.append({
+                    "label": f"Đã ghép: {cand_group}",
+                    "bbox": [rendered_bbox[k] for k in ("x1", "y1", "x2", "y2")],
+                    "confidence": 1.0,
+                    "is_reserved": True,
+                })
+                if cand_group in ("TV", "Máy điều hòa") and placement.get("surface") == "wall":
+                    committed_wall_pair[cand_group] = {
+                        "rendered_bbox": dict(rendered_bbox),
+                        "scale_vs_scene": placement.get("scale_vs_scene", {}),
+                        "surface": "wall",
+                    }
                 current_rec.update(
-                    status="no_placement",
-                    reason=reason,
+                    status="rendered",
+                    reason="",
+                    bbox_px=bbox,
+                    rendered_bbox_px=rendered_bbox,
+                    surface=placement.get("surface"),
+                    lighting=lighting,
                 )
-                logger.info("Bỏ qua tách nền [%s - %s] (nhóm: %s): Không tìm được vị trí đặt an toàn (%s)", prod_dict.get("product_id"), prod_dict.get("product_name"), group, reason)
-                results.append(current_rec)
-                continue
-
-            bbox = placement["bbox_px"]
-            if any(boxes_intersect(bbox, d["bbox"]) for d in reserved if d.get("bbox") is not None):
-                current_rec.update(status="placement_collision", reason="Bbox đè lên ảnh đã ghép")
-                results.append(current_rec)
-                continue
-
-            if not prod_dict.get("image_url"):
-                current_rec.update(status="missing_image_url", reason="SKU không có image_url")
-                results.append(current_rec)
-                continue
-
-            # Download & Cutout (Không fallback: nếu không gọi được API tách nền thì log lỗi ra)
-            try:
-                source_bytes, source_name, mime = download_selected_product_image(prod_dict["image_url"])
-            except Exception as dl_exc:
+                entry["selected_product"] = prod_dict
+                last_rec = current_rec
+                break
+            except Exception as exc:
                 logger.error(
-                    "Lỗi tải ảnh sản phẩm [%s - %s] từ URL '%s': %s",
-                    prod_dict.get("product_id"), prod_dict.get("product_name"),
-                    prod_dict.get("image_url"), dl_exc, exc_info=True,
+                    "Lỗi xử lý ghép ảnh cho sản phẩm [%s - %s] (nhóm: %s): %s",
+                    prod_dict.get("product_id"), prod_dict.get("product_name"), cand_group, exc, exc_info=True,
                 )
-                current_rec.update(status="download_failed", reason=f"Lỗi tải ảnh: {dl_exc}")
-                results.append(current_rec)
+                current_rec.update(status="render_failed", reason=f"{type(exc).__name__}: {exc}")
+                last_rec = current_rec
                 continue
 
-            try:
-                cutout = require_api_cutout(
-                    source_bytes,
-                    source_name,
-                    mime,
-                    api_url=api_url,
-                    product_id=prod_dict.get("product_id"),
-                    product_name=prod_dict.get("product_name"),
-                    group_name=group,
-                    user_agent=user_agent,
-                )
-                logger.info(
-                    "Tách nền THÀNH CÔNG cho sản phẩm [%s - %s] (nhóm: %s) — tiếp tục xử lý relighting và compositing",
-                    prod_dict.get("product_id"),
-                    prod_dict.get("product_name"),
-                    group,
-                )
-            except Exception as api_exc:
-                logger.error(
-                    "Tách nền THẤT BẠI cho sản phẩm [%s - %s] (nhóm: %s): %s",
-                    prod_dict.get("product_id"),
-                    prod_dict.get("product_name"),
-                    group,
-                    api_exc,
-                )
-                current_rec.update(status="cutout_error", reason=f"Không gọi được API tách nền: {api_exc}")
-                results.append(current_rec)
-                continue
-
-            # Photometric Relighting (V8.8 + V8.20 minus 20%)
-            lit_cutout, lighting = v88_relight_api_cutout(cutout, scene_render, placement, masks=masks, group_name=group)
-            lit_cutout, final_brightness = v820_match_object_to_scene_minus_20(lit_cutout, scene_render, placement, masks=masks, group_name=group)
-
-            # Compositing
-            if group == "TV" and TV_WALL_GEOMETRY_V812.get("enabled"):
-                next_canvas, rendered_bbox, projection_diag = v812_composite_tv_cutout(canvas, lit_cutout, placement, masks)
-                current_rec["tv_projective_geometry"] = projection_diag
-            elif group == "Máy điều hòa" and current_rec.get("paired_scale_plan", {}).get("target_width_px"):
-                next_canvas, rendered_bbox = v89_composite_width_first(canvas, lit_cutout, placement, current_rec["paired_scale_plan"]["target_width_px"])
-            else:
-                next_canvas, rendered_bbox = composite_api_cutout(canvas, lit_cutout, placement)
-
-            canvas = next_canvas
-            reserved.append({
-                "label": f"Đã ghép: {group}",
-                "bbox": [rendered_bbox[k] for k in ("x1", "y1", "x2", "y2")],
-                "confidence": 1.0,
-            })
-            current_rec.update(
-                status="rendered",
-                reason="",
-                bbox_px=bbox,
-                rendered_bbox_px=rendered_bbox,
-                surface=placement.get("surface"),
-            )
-            entry["selected_product"] = prod_dict
-            results.append(current_rec)
-        except Exception as exc:
-            logger.error(
-                "Lỗi xử lý ghép ảnh cho sản phẩm [%s - %s] (nhóm: %s): %s",
-                prod_dict.get("product_id"), prod_dict.get("product_name"), group, exc, exc_info=True,
-            )
-            current_rec.update(status="render_failed", reason=f"{type(exc).__name__}: {exc}")
-            results.append(current_rec)
+        if last_rec is not None:
+            results.append(last_rec)
 
     results.sort(key=lambda x: x["rank"])
     success = [x for x in results if x["status"] == "rendered"]
@@ -7451,6 +8155,25 @@ def render_room_recommendations(
         "Kết thúc render phòng: %d/%d sản phẩm được đặt thành công (gọi tách nền thành công %d lần)",
         len(success), len(results), len(success)
     )
+
+    flux_diagnostics = None
+    if use_flux and success:
+        try:
+            from app.services.flux_renderer import refine_with_flux_klein
+
+            f_settings = flux_settings or {}
+            canvas, flux_diagnostics = refine_with_flux_klein(
+                canvas,
+                room_type=recommendations_result.get("room_type", "living_room"),
+                placed_items=success,
+                denoising_strength=f_settings.get("denoising_strength", 0.38),
+                num_inference_steps=f_settings.get("inference_steps", 4),
+                model_id=f_settings.get("model_id", "black-forest-labs/FLUX.2-klein-4B"),
+                device=f_settings.get("device"),
+            )
+        except Exception as f_exc:
+            logger.warning("Không thể áp dụng FLUX.2 Klein 4B: %s", f_exc)
+            flux_diagnostics = {"flux_applied": False, "error": str(f_exc)}
 
     buf = BytesIO()
     canvas.convert("RGB").save(buf, format="PNG")
@@ -7478,5 +8201,6 @@ def render_room_recommendations(
             "segmentation_info": segmentation_info,
             "depth_info": depth_info,
             "scene_lighting": scene_lighting,
+            "flux": flux_diagnostics,
         },
     }
